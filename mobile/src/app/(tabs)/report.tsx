@@ -1,10 +1,11 @@
+
 import { useState } from 'react';
 import {
   View,
   ScrollView,
   StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
+  Alert,
+  Image,
 } from 'react-native';
 
 import {
@@ -15,19 +16,20 @@ import {
   Chip,
   ProgressBar,
   useTheme,
-  IconButton,
   Divider,
+  RadioButton,
 } from 'react-native-paper';
 
 import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+type IdentificationMethod = 'id_card' | 'no_id' | null;
+
 const categories = [
-  'Misconduct',
   'Classroom Disruption',
+  'Misconduct',
   'Property Damage',
-  'Ragging / Harassment',
-  'Attendance-related Issues',
+  'Bullying',
   'Other',
 ];
 
@@ -35,14 +37,46 @@ export default function ReportScreen() {
   const theme = useTheme();
 
   const [step, setStep] = useState(1);
+
+  // Identification
+  const [method, setMethod] = useState<IdentificationMethod>(null);
   const [usn, setUsn] = useState('');
   const [studentName, setStudentName] = useState('');
   const [verified, setVerified] = useState(false);
 
+  // Unidentified person
+  const [personPhoto, setPersonPhoto] = useState<string | null>(null);
+  const [personDescription, setPersonDescription] = useState('');
+
+  // Incident details
   const [category, setCategory] = useState('');
   const [location, setLocation] = useState('');
   const [description, setDescription] = useState('');
+
+  // Additional evidence
   const [evidence, setEvidence] = useState<string[]>([]);
+
+  const takePhoto = async () => {
+    const permission =
+      await ImagePicker.requestCameraPermissionsAsync();
+
+    if (!permission.granted) {
+      Alert.alert(
+        'Camera permission required',
+        'Please allow camera access to capture a photograph.'
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      quality: 0.8,
+    });
+
+    if (!result.canceled) {
+      setPersonPhoto(result.assets[0].uri);
+    }
+  };
 
   const pickEvidence = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -52,9 +86,9 @@ export default function ReportScreen() {
     });
 
     if (!result.canceled) {
-      setEvidence((previous) => [
+      setEvidence(previous => [
         ...previous,
-        ...result.assets.map((asset) => asset.uri),
+        ...result.assets.map(asset => asset.uri),
       ]);
     }
   };
@@ -63,65 +97,109 @@ export default function ReportScreen() {
     const permission =
       await ImagePicker.requestCameraPermissionsAsync();
 
-    if (!permission.granted) return;
+    if (!permission.granted) {
+      Alert.alert('Camera permission required');
+      return;
+    }
 
     const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
       quality: 0.8,
     });
 
     if (!result.canceled) {
-      setEvidence((previous) => [
+      setEvidence(previous => [
         ...previous,
         result.assets[0].uri,
       ]);
     }
   };
 
+  // Demo lookup only. Real verification requires the backend.
   const verifyStudent = () => {
-    if (!usn.trim()) return;
+    if (!usn.trim()) {
+      Alert.alert('Enter USN', 'Please enter the student USN.');
+      return;
+    }
 
-    // Temporary mock verification.
     setStudentName('Sample Student');
     setVerified(true);
   };
 
+  const canContinue = () => {
+    if (step === 1) {
+      return method !== null;
+    }
+
+    if (step === 2) {
+      if (method === 'id_card') {
+        return verified;
+      }
+
+      return !!personPhoto && personDescription.trim().length > 0;
+    }
+
+    if (step === 3) {
+      return (
+        category !== '' &&
+        location.trim().length > 0 &&
+        description.trim().length > 0
+      );
+    }
+
+    return true;
+  };
+
   const nextStep = () => {
-    setStep((previous) => Math.min(previous + 1, 5));
+    if (!canContinue()) {
+      Alert.alert(
+        'Incomplete information',
+        'Please complete the required fields before continuing.'
+      );
+      return;
+    }
+
+    setStep(previous => Math.min(previous + 1, 5));
   };
 
   const previousStep = () => {
-    setStep((previous) => Math.max(previous - 1, 1));
+    setStep(previous => Math.max(previous - 1, 1));
   };
 
-  const submitReport = () => {
-    // Backend submission will be implemented later.
-    alert('Demo report submitted successfully!');
+  const resetForm = () => {
     setStep(1);
+    setMethod(null);
     setUsn('');
     setStudentName('');
     setVerified(false);
+    setPersonPhoto(null);
+    setPersonDescription('');
     setCategory('');
     setLocation('');
     setDescription('');
     setEvidence([]);
   };
 
-  const canContinue = () => {
-    switch (step) {
-      case 1:
-        return usn.trim().length > 0;
-      case 2:
-        return verified;
-      case 3:
-        return category !== '' &&
-          location.trim() !== '' &&
-          description.trim() !== '';
-      case 4:
-        return true;
-      default:
-        return true;
-    }
+  const submitReport = () => {
+    Alert.alert(
+      'Demo submission',
+      'Your report form is complete. Actual backend submission will be implemented later.',
+      [
+        {
+          text: 'OK',
+          onPress: resetForm,
+        },
+      ]
+    );
   };
+
+  const stepTitles = [
+    'Identify student',
+    'Student information',
+    'Incident details',
+    'Evidence',
+    'Review report',
+  ];
 
   return (
     <SafeAreaView
@@ -131,27 +209,17 @@ export default function ReportScreen() {
       ]}
       edges={['top']}
     >
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <View style={styles.header}>
-          <View>
-            <Text variant="headlineSmall" style={styles.heading}>
-              New report
-            </Text>
-            <Text
-              variant="bodySmall"
-              style={{ color: theme.colors.onSurfaceVariant }}
-            >
-              Document a disciplinary incident
-            </Text>
-          </View>
+      <ScrollView contentContainerStyle={styles.content}>
+        <Text variant="headlineMedium" style={styles.heading}>
+          Report an incident
+        </Text>
 
-          <Chip compact>
-            Step {step} of 5
-          </Chip>
-        </View>
+        <Text
+          variant="bodyMedium"
+          style={{ color: theme.colors.onSurfaceVariant }}
+        >
+          Step {step} of 5 · {stepTitles[step - 1]}
+        </Text>
 
         <ProgressBar
           progress={step / 5}
@@ -159,235 +227,449 @@ export default function ReportScreen() {
           style={styles.progress}
         />
 
-        <ScrollView
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-        >
-          {step === 1 && (
-            <View>
-              <Text variant="titleLarge">Identify student</Text>
-              <Text style={styles.subtitle}>
-                Enter the student's university seat number.
-              </Text>
+        {/* STEP 1: IDENTIFICATION METHOD */}
 
-              <Card style={styles.card}>
-                <Card.Content>
-                  <TextInput
-                    label="Student USN"
-                    value={usn}
-                    onChangeText={(value) => {
-                      setUsn(value);
+        {step === 1 && (
+          <>
+            <Text variant="titleLarge" style={styles.sectionHeading}>
+              Identify the student
+            </Text>
+
+            <Text
+              variant="bodyMedium"
+              style={{ color: theme.colors.onSurfaceVariant }}
+            >
+              Choose how you want to identify the person involved.
+            </Text>
+
+            <Card
+              style={[
+                styles.optionCard,
+                {
+                  backgroundColor:
+                    method === 'id_card'
+                      ? theme.colors.secondaryContainer
+                      : theme.colors.surface,
+                  borderColor:
+                    method === 'id_card'
+                      ? theme.colors.primary
+                      : theme.colors.outlineVariant,
+                },
+              ]}
+              onPress={() => {
+                setMethod('id_card');
+                setVerified(false);
+              }}
+            >
+              <Card.Content>
+                <View style={styles.optionHeader}>
+                  <Text variant="titleMedium">ID card available</Text>
+                  <RadioButton
+                    value="id_card"
+                    status={method === 'id_card' ? 'checked' : 'unchecked'}
+                    onPress={() => {
+                      setMethod('id_card');
                       setVerified(false);
                     }}
-                    mode="outlined"
-                    autoCapitalize="characters"
-                    placeholder="e.g. 1KS25CS007"
                   />
+                </View>
+                <Text
+                  variant="bodyMedium"
+                  style={{ color: theme.colors.onSurfaceVariant }}
+                >
+                  Enter the student's USN and retrieve their details.
+                </Text>
+              </Card.Content>
+            </Card>
 
-                  <Button
-                    mode="contained-tonal"
-                    icon="card-account-details-outline"
-                    style={styles.button}
-                    onPress={verifyStudent}
-                  >
-                    Verify student (Demo)
-                  </Button>
-                </Card.Content>
-              </Card>
-            </View>
-          )}
+            <Card
+              style={[
+                styles.optionCard,
+                {
+                  backgroundColor:
+                    method === 'no_id'
+                      ? theme.colors.secondaryContainer
+                      : theme.colors.surface,
+                  borderColor:
+                    method === 'no_id'
+                      ? theme.colors.primary
+                      : theme.colors.outlineVariant,
+                },
+              ]}
+              onPress={() => {
+                setMethod('no_id');
+                setVerified(false);
+              }}
+            >
+              <Card.Content>
+                <View style={styles.optionHeader}>
+                  <Text variant="titleMedium">No ID card available</Text>
+                  <RadioButton
+                    value="no_id"
+                    status={method === 'no_id' ? 'checked' : 'unchecked'}
+                    onPress={() => {
+                      setMethod('no_id');
+                      setVerified(false);
+                    }}
+                  />
+                </View>
+                <Text
+                  variant="bodyMedium"
+                  style={{ color: theme.colors.onSurfaceVariant }}
+                >
+                  Capture a photograph and provide a description.
+                </Text>
+              </Card.Content>
+            </Card>
+          </>
+        )}
 
-          {step === 2 && (
-            <View>
-              <Text variant="titleLarge">Verify student details</Text>
-              <Text style={styles.subtitle}>
-                Confirm that the student information is correct.
-              </Text>
+        {/* STEP 2: IDENTIFICATION DETAILS */}
 
-              <Card style={styles.card}>
+        {step === 2 && method === 'id_card' && (
+          <>
+            <Text variant="titleLarge" style={styles.sectionHeading}>
+              Student verification
+            </Text>
+
+            <TextInput
+              label="Student USN"
+              value={usn}
+              onChangeText={value => {
+                setUsn(value);
+                setVerified(false);
+                setStudentName('');
+              }}
+              mode="outlined"
+              autoCapitalize="characters"
+              style={styles.input}
+              placeholder="Enter student USN"
+            />
+
+            <Button
+              mode="contained-tonal"
+              onPress={verifyStudent}
+              style={styles.button}
+              disabled={!usn.trim()}
+            >
+              Verify student
+            </Button>
+
+            {verified && (
+              <Card
+                style={[
+                  styles.card,
+                  { backgroundColor: theme.colors.surface },
+                ]}
+              >
                 <Card.Content>
-                  <TextInput
-                    label="Student name"
-                    value={studentName}
-                    onChangeText={setStudentName}
-                    mode="outlined"
-                  />
-
-                  <TextInput
-                    label="Student USN"
-                    value={usn}
-                    onChangeText={setUsn}
-                    mode="outlined"
-                    style={styles.input}
-                  />
-
-                  <Button
-                    mode={verified ? 'contained' : 'outlined'}
-                    icon="check-circle-outline"
-                    onPress={() => setVerified(true)}
-                    style={styles.button}
-                  >
-                    {verified ? 'Details verified' : 'Confirm details'}
-                  </Button>
-                </Card.Content>
-              </Card>
-            </View>
-          )}
-
-          {step === 3 && (
-            <View>
-              <Text variant="titleLarge">Incident details</Text>
-              <Text style={styles.subtitle}>
-                Provide the details of the incident.
-              </Text>
-
-              <Text variant="titleSmall" style={styles.fieldTitle}>
-                Incident category
-              </Text>
-
-              <View style={styles.categories}>
-                {categories.map((item) => (
                   <Chip
-                    key={item}
-                    selected={category === item}
-                    onPress={() => setCategory(item)}
-                    showSelectedCheck
+                    icon="check-circle"
+                    style={styles.chip}
+                    textStyle={{ color: theme.colors.onSurface }}
                   >
-                    {item}
+                    Demo verification successful
                   </Chip>
-                ))}
-              </View>
 
-              <TextInput
-                label="Incident location"
-                value={location}
-                onChangeText={setLocation}
-                mode="outlined"
-                style={styles.input}
-                placeholder="e.g. Block A, Room 204"
-              />
-
-              <TextInput
-                label="Incident description"
-                value={description}
-                onChangeText={setDescription}
-                mode="outlined"
-                multiline
-                numberOfLines={5}
-                style={styles.input}
-                placeholder="Describe what happened..."
-              />
-            </View>
-          )}
-
-          {step === 4 && (
-            <View>
-              <Text variant="titleLarge">Attach evidence</Text>
-              <Text style={styles.subtitle}>
-                Add photographs related to the incident.
-              </Text>
-
-              <Card style={styles.card}>
-                <Card.Content>
-                  <Button
-                    mode="contained"
-                    icon="camera"
-                    onPress={captureEvidence}
-                    style={styles.button}
-                  >
-                    Take photograph
-                  </Button>
-
-                  <Button
-                    mode="outlined"
-                    icon="image-multiple-outline"
-                    onPress={pickEvidence}
-                    style={styles.button}
-                  >
-                    Choose from gallery
-                  </Button>
-
-                  <Text
-                    variant="bodyMedium"
-                    style={styles.evidenceCount}
-                  >
-                    {evidence.length} image(s) selected
+                  <Text variant="titleMedium">
+                    {studentName}
                   </Text>
 
-                  {evidence.map((uri, index) => (
-                    <View key={`${uri}-${index}`} style={styles.evidenceRow}>
-                      <Text
-                        variant="bodySmall"
-                        numberOfLines={1}
-                        style={{ flex: 1 }}
-                      >
-                        Evidence {index + 1}
-                      </Text>
-
-                      <IconButton
-                        icon="delete-outline"
-                        onPress={() =>
-                          setEvidence((previous) =>
-                            previous.filter((_, i) => i !== index)
-                          )
-                        }
-                      />
-                    </View>
-                  ))}
-                </Card.Content>
-              </Card>
-            </View>
-          )}
-
-          {step === 5 && (
-            <View>
-              <Text variant="titleLarge">Review report</Text>
-              <Text style={styles.subtitle}>
-                Verify everything before submitting.
-              </Text>
-
-              <Card style={styles.card}>
-                <Card.Content>
-                  <Text variant="titleMedium">Student information</Text>
-                  <Text>Name: {studentName}</Text>
-                  <Text>USN: {usn}</Text>
-
-                  <Divider style={styles.divider} />
-
-                  <Text variant="titleMedium">Incident</Text>
-                  <Text>Category: {category}</Text>
-                  <Text>Location: {location}</Text>
-                  <Text style={styles.description}>
-                    {description}
+                  <Text variant="bodyMedium">
+                    USN: {usn}
                   </Text>
-
-                  <Divider style={styles.divider} />
-
-                  <Text variant="titleMedium">Evidence</Text>
-                  <Text>{evidence.length} photograph(s) attached</Text>
-
-                  <Divider style={styles.divider} />
 
                   <Text
                     variant="bodySmall"
                     style={{ color: theme.colors.onSurfaceVariant }}
                   >
-                    This report will be submitted for human review.
-                    Submission does not establish guilt or automatically
-                    issue a disciplinary warning.
+                    This is placeholder data. Actual student lookup will
+                    be connected to your backend.
                   </Text>
                 </Card.Content>
               </Card>
-            </View>
-          )}
-        </ScrollView>
+            )}
+          </>
+        )}
 
-        <View style={styles.footer}>
+        {step === 2 && method === 'no_id' && (
+          <>
+            <Text variant="titleLarge" style={styles.sectionHeading}>
+              Unidentified person
+            </Text>
+
+            <Chip
+              icon="alert-circle-outline"
+              style={styles.chip}
+            >
+              Identity not verified
+            </Chip>
+
+            <Text
+              variant="bodyMedium"
+              style={{ color: theme.colors.onSurfaceVariant }}
+            >
+              Capture a photograph if appropriate and permitted by
+              your institution's policy.
+            </Text>
+
+            {personPhoto ? (
+              <View style={styles.photoContainer}>
+                <Image
+                  source={{ uri: personPhoto }}
+                  style={styles.photo}
+                />
+
+                <Button
+                  mode="outlined"
+                  onPress={takePhoto}
+                  style={styles.button}
+                >
+                  Retake photograph
+                </Button>
+
+                <Button
+                  mode="text"
+                  textColor={theme.colors.error}
+                  onPress={() => setPersonPhoto(null)}
+                >
+                  Remove photograph
+                </Button>
+              </View>
+            ) : (
+              <Button
+                mode="contained-tonal"
+                icon="camera"
+                onPress={takePhoto}
+                style={styles.photoButton}
+                contentStyle={{ height: 110 }}
+              >
+                Capture photograph
+              </Button>
+            )}
+
+            <TextInput
+              label="Description of the person"
+              value={personDescription}
+              onChangeText={setPersonDescription}
+              mode="outlined"
+              multiline
+              numberOfLines={4}
+              style={styles.input}
+              placeholder="Describe identifying details or information that may help the committee identify the person."
+            />
+          </>
+        )}
+
+        {/* STEP 3: INCIDENT DETAILS */}
+
+        {step === 3 && (
+          <>
+            <Text variant="titleLarge" style={styles.sectionHeading}>
+              Incident details
+            </Text>
+
+            <Text variant="titleSmall" style={styles.label}>
+              Incident category
+            </Text>
+
+            <View style={styles.chipContainer}>
+              {categories.map(item => (
+                <Chip
+                  key={item}
+                  selected={category === item}
+                  onPress={() => setCategory(item)}
+                  style={styles.categoryChip}
+                >
+                  {item}
+                </Chip>
+              ))}
+            </View>
+
+            <TextInput
+              label="Incident location"
+              value={location}
+              onChangeText={setLocation}
+              mode="outlined"
+              style={styles.input}
+              placeholder="e.g. Block A, Room 204"
+            />
+
+            <TextInput
+              label="Describe what happened"
+              value={description}
+              onChangeText={setDescription}
+              mode="outlined"
+              multiline
+              numberOfLines={6}
+              style={styles.input}
+              placeholder="Provide a factual description of the incident."
+            />
+          </>
+        )}
+
+        {/* STEP 4: ADDITIONAL EVIDENCE */}
+
+        {step === 4 && (
+          <>
+            <Text variant="titleLarge" style={styles.sectionHeading}>
+              Additional evidence
+            </Text>
+
+            <Text
+              variant="bodyMedium"
+              style={{ color: theme.colors.onSurfaceVariant }}
+            >
+              Add photographs or other supporting images if available.
+              This step is optional.
+            </Text>
+
+            <View style={styles.buttonRow}>
+              <Button
+                mode="contained-tonal"
+                icon="camera"
+                onPress={captureEvidence}
+                style={styles.flexButton}
+              >
+                Camera
+              </Button>
+
+              <Button
+                mode="contained-tonal"
+                icon="image"
+                onPress={pickEvidence}
+                style={styles.flexButton}
+              >
+                Gallery
+              </Button>
+            </View>
+
+            {evidence.map((uri, index) => (
+              <View key={`${uri}-${index}`} style={styles.evidenceItem}>
+                <Image
+                  source={{ uri }}
+                  style={styles.evidenceThumbnail}
+                />
+
+                <View style={{ flex: 1 }}>
+                  <Text variant="bodyMedium">
+                    Evidence {index + 1}
+                  </Text>
+                </View>
+
+                <Button
+                  compact
+                  textColor={theme.colors.error}
+                  onPress={() =>
+                    setEvidence(previous =>
+                      previous.filter((_, i) => i !== index)
+                    )
+                  }
+                >
+                  Remove
+                </Button>
+              </View>
+            ))}
+          </>
+        )}
+
+        {/* STEP 5: REVIEW */}
+
+        {step === 5 && (
+          <>
+            <Text variant="titleLarge" style={styles.sectionHeading}>
+              Review report
+            </Text>
+
+            <Card
+              style={[
+                styles.card,
+                { backgroundColor: theme.colors.surface },
+              ]}
+            >
+              <Card.Content>
+                <Text variant="titleMedium">
+                  Student identification
+                </Text>
+
+                {method === 'id_card' ? (
+                  <>
+                    <Text variant="bodyMedium">
+                      Name: {studentName}
+                    </Text>
+                    <Text variant="bodyMedium">
+                      USN: {usn}
+                    </Text>
+                    <Chip icon="check-circle" style={styles.chip}>
+                      Demo verified
+                    </Chip>
+                  </>
+                ) : (
+                  <>
+                    <Text variant="bodyMedium">
+                      Identification method: No ID card
+                    </Text>
+                    <Chip icon="alert-circle-outline" style={styles.chip}>
+                      Identity unverified
+                    </Chip>
+                    <Text variant="bodyMedium">
+                      Description: {personDescription}
+                    </Text>
+                    {personPhoto && (
+                      <Image
+                        source={{ uri: personPhoto }}
+                        style={styles.reviewPhoto}
+                      />
+                    )}
+                  </>
+                )}
+
+                <Divider style={styles.divider} />
+
+                <Text variant="titleMedium">
+                  Incident information
+                </Text>
+                <Text variant="bodyMedium">
+                  Category: {category}
+                </Text>
+                <Text variant="bodyMedium">
+                  Location: {location}
+                </Text>
+                <Text variant="bodyMedium">
+                  Description: {description}
+                </Text>
+
+                <Divider style={styles.divider} />
+
+                <Text variant="titleMedium">
+                  Additional evidence
+                </Text>
+                <Text variant="bodyMedium">
+                  {evidence.length} image(s) attached
+                </Text>
+              </Card.Content>
+            </Card>
+
+            <Text
+              variant="bodySmall"
+              style={{ color: theme.colors.onSurfaceVariant }}
+            >
+              Submitting a report does not establish that misconduct
+              occurred. The committee must review the information.
+            </Text>
+          </>
+        )}
+
+        {/* NAVIGATION */}
+
+        <Divider style={styles.divider} />
+
+        <View style={styles.navigation}>
           {step > 1 && (
             <Button
               mode="outlined"
               onPress={previousStep}
-              style={styles.footerButton}
+              style={styles.flexButton}
             >
               Back
             </Button>
@@ -398,22 +680,22 @@ export default function ReportScreen() {
               mode="contained"
               onPress={nextStep}
               disabled={!canContinue()}
-              style={styles.footerButton}
+              style={styles.flexButton}
             >
               Continue
             </Button>
           ) : (
             <Button
               mode="contained"
-              icon="send"
               onPress={submitReport}
-              style={styles.footerButton}
+              style={styles.flexButton}
+              icon="send"
             >
               Submit report
             </Button>
           )}
         </View>
-      </KeyboardAvoidingView>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -422,69 +704,106 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  header: {
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  content: {
+    padding: 20,
+    paddingBottom: 40,
   },
   heading: {
-    fontWeight: '700',
+    fontWeight: '600',
+    marginBottom: 8,
   },
   progress: {
-    height: 4,
-    marginHorizontal: 18,
-    borderRadius: 4,
+    height: 6,
+    borderRadius: 10,
+    marginTop: 14,
+    marginBottom: 24,
   },
-  content: {
-    padding: 18,
-    paddingBottom: 30,
+  sectionHeading: {
+    marginBottom: 12,
+    fontWeight: '600',
   },
-  subtitle: {
-    marginTop: 8,
-    marginBottom: 18,
-    color: '#888888',
+  optionCard: {
+    marginTop: 16,
+    borderRadius: 18,
+    borderWidth: 1,
+    elevation: 0,
   },
-  card: {
-    borderRadius: 16,
-    marginTop: 8,
-  },
-  button: {
-    marginTop: 12,
+  optionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   input: {
+    marginTop: 16,
+  },
+  button: {
     marginTop: 14,
   },
-  fieldTitle: {
-    marginBottom: 12,
+  photoButton: {
+    marginTop: 18,
+    borderRadius: 16,
   },
-  categories: {
+  photoContainer: {
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  photo: {
+    width: '100%',
+    height: 220,
+    borderRadius: 16,
+  },
+  reviewPhoto: {
+    width: '100%',
+    height: 180,
+    borderRadius: 12,
+    marginTop: 12,
+  },
+  card: {
+    borderRadius: 18,
+    marginTop: 18,
+    elevation: 0,
+  },
+  chip: {
+    alignSelf: 'flex-start',
+    marginVertical: 12,
+  },
+  label: {
+    marginTop: 18,
+    marginBottom: 10,
+  },
+  chipContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
-  evidenceCount: {
+  categoryChip: {
+    marginBottom: 4,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 10,
     marginTop: 20,
   },
-  evidenceRow: {
+  flexButton: {
+    flex: 1,
+  },
+  evidenceItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
+    gap: 12,
+    marginTop: 16,
   },
-  description: {
-    marginTop: 10,
-    lineHeight: 22,
+  evidenceThumbnail: {
+    width: 64,
+    height: 64,
+    borderRadius: 10,
   },
   divider: {
-    marginVertical: 14,
+    marginVertical: 22,
   },
-  footer: {
+  navigation: {
     flexDirection: 'row',
-    padding: 14,
-    gap: 10,
-  },
-  footerButton: {
-    flex: 1,
+    gap: 12,
+    marginTop: 8,
   },
 });

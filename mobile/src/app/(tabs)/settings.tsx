@@ -302,10 +302,8 @@ const styles = StyleSheet.create({
     profileCard: {
         borderRadius: 20,
         marginBottom: 28,
-        backgroundColor: 'transparent',
         elevation: 0,
-        borderWidth: StyleSheet.hairlineWidth,
-        borderColor: '#88888855',
+        // borderWidth: StyleSheet.hairlineWidth,
     },
     profileContent: {
         flexDirection: 'row',

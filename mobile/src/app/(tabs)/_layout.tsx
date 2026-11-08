@@ -10,6 +10,7 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
+        tabBarShowLabel: false,
         headerShown: false,
         tabBarActiveTintColor: theme.colors.onSecondaryContainer,
         tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
@@ -17,7 +18,7 @@ export default function TabLayout() {
         tabBarStyle: {
           backgroundColor: theme.colors.surface,
           borderTopColor: theme.colors.outlineVariant,
-          height: 76,
+          height: 56,
           paddingTop: 6,
           paddingBottom: 8,
           elevation: 0,
