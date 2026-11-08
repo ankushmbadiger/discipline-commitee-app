@@ -1,0 +1,426 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ENUMS
+
+enum UserRole {
+  STUDENT
+  COMMITTEE_MEMBER
+  COLLEGE_ADMIN
+  PLATFORM_ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+enum StudentRecordStatus {
+  ACTIVE
+  INACTIVE
+  GRADUATED
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum VerificationMethod {
+  MANUAL_REVIEW
+}
+
+enum ReportCategory {
+  ELECTRICAL
+  PLUMBING
+  CLEANLINESS
+  INFRASTRUCTURE
+  INTERNET
+  OTHER
+}
+
+enum ReportStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  AWAITING_STUDENT_RESPONSE
+  RESOLVED
+  DISMISSED
+}
+
+enum IdentityStatus {
+  UNIDENTIFIED
+  IDENTIFIED
+  DISPUTED
+}
+
+enum EvidenceKind {
+  INCIDENT
+  IDENTIFICATION
+}
+
+enum AppealStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  NEEDS_MORE_INFORMATION
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
+enum NotificationType {
+  VERIFICATION
+  REPORT
+  APPEAL
+  SYSTEM
+}
+
+enum NoticeStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+// COLLEGE
+
+model College {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  code      String   @unique
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  users     User[]
+  students  Student[]
+  reports   Report[]
+  notices   PublicNotice[]
+  auditLogs AuditLog[]
+}
+
+// USER
+
+model User {
+  id            String        @id @default(uuid()) @db.Uuid
+  firebaseUid   String        @unique
+  email         String        @unique
+  fullName      String
+  role          UserRole      @default(STUDENT)
+  accountStatus AccountStatus @default(ACTIVE)
+
+  collegeId String?  @db.Uuid
+  college   College? @relation(fields: [collegeId], references: [id], onDelete: SetNull)
+
+  student Student?
+
+  requestedVerifications StudentVerification[] @relation("VerificationRequester")
+  reviewedVerifications  StudentVerification[] @relation("VerificationReviewer")
+
+  createdReports Report[] @relation("ReportCreator")
+
+  identityLinks ReportInvolvement[] @relation("IdentityLinker")
+
+  uploadedEvidence Evidence[] @relation("EvidenceUploader")
+
+  submittedAppeals Appeal[] @relation("AppealSubmitter")
+  reviewedAppeals  Appeal[] @relation("AppealReviewer")
+
+  appealStatusChanges AppealStatusHistory[] @relation("AppealStatusActor")
+
+  uploadedAppealEvidence AppealEvidence[] @relation("AppealEvidenceUploader")
+
+  notifications    Notification[]
+  auditLogs        AuditLog[]
+  publishedNotices PublicNotice[] @relation("NoticePublisher")
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([collegeId])
+  @@index([role, accountStatus])
+}
+
+// STUDENT
+
+model Student {
+  id        String  @id @default(uuid()) @db.Uuid
+  collegeId String  @db.Uuid
+  userId    String? @unique @db.Uuid
+
+  college College @relation(fields: [collegeId], references: [id], onDelete: Restrict)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  usn        String
+  fullName   String
+  department String
+  semester   Int?
+  status     StudentRecordStatus @default(ACTIVE)
+
+  verifications StudentVerification[]
+  involvements  ReportInvolvement[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  @@unique([collegeId, usn])
+  @@index([collegeId, fullName])
+}
+
+// STUDENT VERIFICATION
+
+model StudentVerification {
+  id        String @id @default(uuid()) @db.Uuid
+  userId    String @db.Uuid
+  studentId String @db.Uuid
+
+  requester User    @relation("VerificationRequester", fields: [userId], references: [id], onDelete: Restrict)
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  status VerificationStatus @default(PENDING)
+  method VerificationMethod @default(MANUAL_REVIEW)
+
+  reviewedById String? @db.Uuid
+  reviewer     User?   @relation("VerificationReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  reason     String?
+  createdAt  DateTime  @default(now()) @db.Timestamptz(6)
+  reviewedAt DateTime? @db.Timestamptz(6)
+
+  @@index([userId, status])
+  @@index([studentId, status])
+  @@index([reviewedById])
+}
+
+// REPORT
+
+model Report {
+  id           String @id @default(uuid()) @db.Uuid
+  collegeId    String @db.Uuid
+  reportNumber String
+
+  college College @relation(fields: [collegeId], references: [id], onDelete: Restrict)
+
+  createdById String @db.Uuid
+  creator     User   @relation("ReportCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  category    ReportCategory
+  description String
+  location    String?
+  incidentAt  DateTime?      @db.Timestamptz(6)
+
+  status ReportStatus @default(SUBMITTED)
+
+  involvements  ReportInvolvement[]
+  evidence      Evidence[]
+  notifications Notification[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  @@unique([collegeId, reportNumber])
+  @@index([collegeId, status, createdAt])
+  @@index([createdById])
+}
+
+// REPORT INVOLVEMENT
+
+model ReportInvolvement {
+  id        String  @id @default(uuid()) @db.Uuid
+  reportId  String  @db.Uuid
+  studentId String? @db.Uuid
+
+  report  Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  student Student? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+
+  identityStatus IdentityStatus @default(UNIDENTIFIED)
+  description    String?
+
+  identityLinkedById String? @db.Uuid
+  identityLinkedBy   User?   @relation("IdentityLinker", fields: [identityLinkedById], references: [id], onDelete: SetNull)
+
+  identityLinkedAt DateTime? @db.Timestamptz(6)
+
+  evidence Evidence[]
+  appeals  Appeal[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  @@unique([reportId, studentId])
+  @@index([studentId])
+  @@index([reportId, identityStatus])
+}
+
+// REPORT EVIDENCE
+
+model Evidence {
+  id            String  @id @default(uuid()) @db.Uuid
+  reportId      String  @db.Uuid
+  involvementId String? @db.Uuid
+
+  report      Report             @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  involvement ReportInvolvement? @relation(fields: [involvementId], references: [id], onDelete: SetNull)
+
+  kind     EvidenceKind
+  fileKey  String
+  filename String
+  mimeType String
+  fileSize BigInt
+
+  uploadedById String @db.Uuid
+  uploadedBy   User   @relation("EvidenceUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([reportId])
+  @@index([involvementId])
+}
+
+// APPEAL
+
+model Appeal {
+  id            String @id @default(uuid()) @db.Uuid
+  involvementId String @db.Uuid
+
+  involvement ReportInvolvement @relation(fields: [involvementId], references: [id], onDelete: Restrict)
+
+  submittedById String @db.Uuid
+  submitter     User   @relation("AppealSubmitter", fields: [submittedById], references: [id], onDelete: Restrict)
+
+  explanation String
+  status      AppealStatus @default(SUBMITTED)
+
+  reviewedById String? @db.Uuid
+  reviewer     User?   @relation("AppealReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  decisionReason String?
+  reviewedAt     DateTime? @db.Timestamptz(6)
+
+  evidence      AppealEvidence[]
+  statusHistory AppealStatusHistory[]
+  notifications Notification[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([involvementId, createdAt])
+  @@index([submittedById])
+  @@index([status, createdAt])
+}
+
+// APPEAL EVIDENCE
+
+model AppealEvidence {
+  id       String @id @default(uuid()) @db.Uuid
+  appealId String @db.Uuid
+
+  appeal Appeal @relation(fields: [appealId], references: [id], onDelete: Cascade)
+
+  fileKey  String
+  filename String
+  mimeType String
+  fileSize BigInt
+
+  uploadedById String @db.Uuid
+  uploadedBy   User   @relation("AppealEvidenceUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([appealId])
+}
+
+// APPEAL STATUS HISTORY
+
+model AppealStatusHistory {
+  id       String @id @default(uuid()) @db.Uuid
+  appealId String @db.Uuid
+
+  appeal Appeal @relation(fields: [appealId], references: [id], onDelete: Cascade)
+
+  oldStatus AppealStatus?
+  newStatus AppealStatus
+
+  changedById String? @db.Uuid
+  changedBy   User?   @relation("AppealStatusActor", fields: [changedById], references: [id], onDelete: SetNull)
+
+  comment   String?
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([appealId, createdAt])
+}
+
+// NOTIFICATION
+
+model Notification {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  reportId String? @db.Uuid
+  report   Report? @relation(fields: [reportId], references: [id], onDelete: SetNull)
+
+  appealId String? @db.Uuid
+  appeal   Appeal? @relation(fields: [appealId], references: [id], onDelete: SetNull)
+
+  type    NotificationType
+  title   String
+  message String
+  isRead  Boolean          @default(false)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([userId, isRead, createdAt])
+}
+
+// AUDIT LOG
+
+model AuditLog {
+  id        String  @id @default(uuid()) @db.Uuid
+  userId    String? @db.Uuid
+  collegeId String? @db.Uuid
+
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  college College? @relation(fields: [collegeId], references: [id], onDelete: SetNull)
+
+  action     String
+  entityType String
+  entityId   String?
+  details    Json?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([collegeId, createdAt])
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+}
+
+// PUBLIC NOTICE
+
+model PublicNotice {
+  id        String @id @default(uuid()) @db.Uuid
+  collegeId String @db.Uuid
+
+  college College @relation(fields: [collegeId], references: [id], onDelete: Restrict)
+
+  title   String
+  content String
+  status  NoticeStatus @default(DRAFT)
+
+  publishedById String @db.Uuid
+  publisher     User   @relation("NoticePublisher", fields: [publishedById], references: [id], onDelete: Restrict)
+
+  publishedAt DateTime? @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([collegeId, status, publishedAt])
+}
