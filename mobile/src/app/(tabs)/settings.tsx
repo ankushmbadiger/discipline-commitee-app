@@ -13,15 +13,23 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState } from 'react';
 import { useAppTheme } from '../../constants/theme-context';
 import type { PaletteName, ThemeMode } from '../../constants/theme';
-
+import { router } from 'expo-router';
+import { useAuth } from '../../context/auth-context';
 import {
     SegmentedButtons,
 } from 'react-native-paper';
-
+import { Button } from 'react-native-paper';
+import api from '../../lib/api';
 
 export default function SettingsScreen() {
     const theme = useTheme();
-
+    const {
+        user,
+        profile,
+        profileLoading,
+        profileError,
+        signOut,
+    } = useAuth();
     const {
         palette,
         setPalette,
@@ -31,21 +39,96 @@ export default function SettingsScreen() {
     const [notifications, setNotifications] = useState(true);
     const [emailUpdates, setEmailUpdates] = useState(false);
 
+    const testAdminAccess = async () => {
+        try {
+            const response = await api.get('/admin/student-verifications');
+
+            Alert.alert(
+                'Admin API Success',
+                `Pending requests: ${response.data.count}`
+            );
+        } catch (error: any) {
+            console.error('Admin API test failed:', error.response?.data || error);
+
+            Alert.alert(
+                'Admin API Failed',
+                error.response?.data?.message ||
+                'Could not connect to the admin API.'
+            );
+        }
+    };
+
+    const testMyProfile = async () => {
+        try {
+            const response = await api.get('/auth/me');
+
+            console.log('My profile:', response.data);
+
+            Alert.alert(
+                'Profile API Success',
+                `Name: ${response.data.data.fullName}\nRole: ${response.data.data.role}\nCollege: ${response.data.data.college?.name ?? 'Platform Admin'}`
+            );
+        } catch (error: any) {
+            console.error(
+                'Profile API failed:',
+                error.response?.data || error
+            );
+
+            Alert.alert(
+                'Profile API Failed',
+                error.response?.data?.message || 'Could not retrieve profile.'
+            );
+        }
+    };
+
+    const testApproveVerification = async () => {
+        try {
+            const response = await api.post(
+                '/admin/student-verifications/77df7376-17bd-4863-87d9-04b924fc3b91/approve',
+                {}
+            );
+
+            Alert.alert('Approval Success', response.data.message);
+        } catch (error: any) {
+            console.error(
+                'Approval test failed:',
+                error.response?.data || error
+            );
+
+            Alert.alert(
+                'Approval Failed',
+                error.response?.data?.message || 'Could not approve verification.'
+            );
+        }
+    };
     const handleLogout = () => {
         Alert.alert(
             'Log out',
             'Are you sure you want to log out?',
             [
-                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Cancel',
+                    style: 'cancel',
+                },
                 {
                     text: 'Log out',
                     style: 'destructive',
-                    onPress: () => Alert.alert('Demo', 'Logout will be implemented with authentication.'),
+                    onPress: async () => {
+                        try {
+                            await signOut();
+                            router.replace('/');
+                        } catch (error) {
+                            Alert.alert(
+                                'Logout failed',
+                                'Unable to log out. Please try again.'
+                            );
+                            console.error('Logout error:', error);
+                        }
+                    },
                 },
             ]
         );
     };
-
     return (
         <SafeAreaView
             style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -62,29 +145,59 @@ export default function SettingsScreen() {
                     { backgroundColor: theme.colors.surface },
                 ]}
                 >
+
                     <Card.Content style={styles.profileContent}>
                         <Avatar.Text
                             size={64}
-                            label="AM"
+                            label={
+                                user?.email
+                                    ? user.email.substring(0, 2).toUpperCase()
+                                    : 'G'
+                            }
                             style={{ backgroundColor: theme.colors.primaryContainer }}
                             color={theme.colors.onPrimaryContainer}
                         />
 
                         <View style={styles.profileInfo}>
-                            <Text variant="titleMedium">Ankush M Badiger</Text>
+                            <Text variant="titleMedium">
+                                {user?.displayName || (user ? 'Signed-in user' : 'Guest')}
+                            </Text>
+
                             <Text
                                 variant="bodyMedium"
                                 style={{ color: theme.colors.onSurfaceVariant }}
                             >
-                                Committee Member
+                                {user?.email || 'Not signed in'}
                             </Text>
+
                             <Text
                                 variant="bodySmall"
                                 style={{ color: theme.colors.onSurfaceVariant }}
                             >
-                                1KS25CS007
+                                {user ? 'Authenticated account' : 'Public access'}
                             </Text>
                         </View>
+                    </Card.Content>
+                </Card>
+
+                <Card style={{ marginHorizontal: 16, marginTop: 12 }}>
+                    <Card.Content>
+                        <Text variant="titleMedium">
+                            Application Profile Test
+                        </Text>
+
+                        {profileLoading ? (
+                            <Text>Loading profile...</Text>
+                        ) : profileError ? (
+                            <Text>{profileError}</Text>
+                        ) : (
+                            <>
+                                <Text>Name: {profile?.fullName}</Text>
+                                <Text>Role: {profile?.role}</Text>
+                                <Text>College: {profile?.college?.name ?? "None"}</Text>
+                                <Text>Account: {profile?.accountStatus}</Text>
+                            </>
+                        )}
                     </Card.Content>
                 </Card>
 
@@ -237,6 +350,50 @@ export default function SettingsScreen() {
                 </Card>
 
 
+                {user && (
+                    <Card
+                        style={[
+                            styles.sectionCard,
+                            { backgroundColor: theme.colors.surface },
+                        ]}
+                    >
+                        <Card.Content>
+                            <Text variant="titleMedium">
+                                Administrator testing
+                            </Text>
+
+                            <Text
+                                variant="bodySmall"
+                                style={{ color: theme.colors.onSurfaceVariant }}
+                            >
+                                Test access to the protected verification API.
+                            </Text>
+
+                            <Button
+                                mode="contained"
+                                onPress={testAdminAccess}
+                                style={{ marginTop: 12 }}
+                            >
+                                Test admin access
+                            </Button>
+                            <Button
+                                mode="contained"
+                                onPress={testApproveVerification}
+                                style={{ marginTop: 12 }}
+                            >
+                                Test student approval
+                            </Button>
+
+                            <Button
+                                mode="contained"
+                                onPress={testMyProfile}
+                                style={{ marginTop: 12 }}
+                            >
+                                Test my profile
+                            </Button>
+                        </Card.Content>
+                    </Card>
+                )}
 
                 {/* About */}
                 <Text variant="titleSmall" style={styles.sectionTitle}>
@@ -265,16 +422,36 @@ export default function SettingsScreen() {
                 </Card>
 
                 {/* Logout */}
-                <List.Item
-                    title="Log out"
-                    titleStyle={{ color: theme.colors.error }}
-                    left={props => (
-                        <List.Icon {...props} icon="logout" color={theme.colors.error} />
-                    )}
-                    onPress={handleLogout}
-                    style={styles.logout}
-                    style={{ backgroundColor: theme.colors.surface }}
-                />
+                {user ? (
+                    <List.Item
+                        title="Log out"
+                        description="Sign out of your account"
+                        titleStyle={{ color: theme.colors.error }}
+                        left={props => (
+                            <List.Icon
+                                {...props}
+                                icon="logout"
+                                color={theme.colors.error}
+                            />
+                        )}
+                        onPress={handleLogout}
+                        style={{ backgroundColor: theme.colors.surface }}
+                    />
+                ) : (
+                    <List.Item
+                        title="Sign in"
+                        description="Log in to access your account"
+                        left={props => (
+                            <List.Icon
+                                {...props}
+                                icon="login"
+                                color={theme.colors.primary}
+                            />
+                        )}
+                        onPress={() => router.push('/login' as never)}
+                        style={{ backgroundColor: theme.colors.surface }}
+                    />
+                )}
 
                 <Text
                     variant="bodySmall"

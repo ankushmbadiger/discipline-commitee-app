@@ -54,7 +54,7 @@ export default function TabLayout() {
               <MaterialCommunityIcons
                 name={focused ? 'home' : 'home-outline'}
                 size={size}
-                color={color}
+                color={typeof color === "number" ? "#000000" : color ?? "#000000"}
               />
             </View>
           ),
@@ -81,7 +81,7 @@ export default function TabLayout() {
               <MaterialCommunityIcons
                 name={focused ? 'plus-box' : 'plus-box-outline'}
                 size={size}
-                color={color}
+                color={typeof color === "number" ? "#000000" : color ?? "#000000"}
               />
             </View>
           ),
@@ -108,7 +108,7 @@ export default function TabLayout() {
               <MaterialCommunityIcons
                 name={focused ? 'cog' : 'cog-outline'}
                 size={size}
-                color={color}
+                color={typeof color === "number" ? "#000000" : color ?? "#000000"}
               />
             </View>
           ),

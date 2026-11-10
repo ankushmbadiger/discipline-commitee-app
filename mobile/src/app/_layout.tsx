@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { PaperProvider } from 'react-native-paper';
@@ -12,6 +13,7 @@ import {
 } from '../constants/theme';
 
 import { ThemeContext } from '../constants/theme-context';
+import { AuthProvider } from '../context/auth-context';
 
 const PALETTE_KEY = 'app_palette';
 const MODE_KEY = 'app_theme_mode';
@@ -36,7 +38,6 @@ export default function RootLayout() {
   const [mode, setMode] = useState<ThemeMode>('system');
   const [isHydrated, setIsHydrated] = useState(false);
 
-  // Load saved preferences when the app starts.
   useEffect(() => {
     async function loadPreferences() {
       try {
@@ -60,7 +61,6 @@ export default function RootLayout() {
     loadPreferences();
   }, []);
 
-  // Save preferences whenever the user changes them.
   useEffect(() => {
     if (!isHydrated) return;
 
@@ -90,10 +90,12 @@ export default function RootLayout() {
       value={{ palette, setPalette, mode, setMode }}
     >
       <PaperProvider theme={theme}>
-        <StatusBar
-          style={resolvedMode === 'dark' ? 'light' : 'dark'}
-        />
-        <Stack screenOptions={{ headerShown: false }} />
+        <AuthProvider>
+          <StatusBar
+            style={resolvedMode === 'dark' ? 'light' : 'dark'}
+          />
+          <Stack screenOptions={{ headerShown: false }} />
+        </AuthProvider>
       </PaperProvider>
     </ThemeContext.Provider>
   );

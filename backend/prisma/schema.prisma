@@ -176,12 +176,18 @@ model Student {
 // STUDENT VERIFICATION
 
 model StudentVerification {
-  id        String @id @default(uuid()) @db.Uuid
-  userId    String @db.Uuid
-  studentId String @db.Uuid
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
 
-  requester User    @relation("VerificationRequester", fields: [userId], references: [id], onDelete: Restrict)
-  student   Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  requester User @relation("VerificationRequester", fields: [userId], references: [id], onDelete: Restrict)
+
+  studentId String?  @db.Uuid
+  student   Student? @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  requestedUsn        String
+  requestedFullName   String
+  requestedDepartment String?
+  requestedSemester   Int?
 
   status VerificationStatus @default(PENDING)
   method VerificationMethod @default(MANUAL_REVIEW)
@@ -239,6 +245,11 @@ model ReportInvolvement {
   report  Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
   student Student? @relation(fields: [studentId], references: [id], onDelete: SetNull)
 
+  reportedName       String?
+  reportedUsn        String?
+  reportedDepartment String?
+  reportedSemester   Int?
+
   identityStatus IdentityStatus @default(UNIDENTIFIED)
   description    String?
 
@@ -256,6 +267,7 @@ model ReportInvolvement {
   @@unique([reportId, studentId])
   @@index([studentId])
   @@index([reportId, identityStatus])
+  @@index([reportedUsn])
 }
 
 // REPORT EVIDENCE
