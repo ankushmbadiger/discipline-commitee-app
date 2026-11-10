@@ -8,6 +8,7 @@ import {
     Switch,
     Text,
     useTheme,
+    TextInput,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState } from 'react';
@@ -39,6 +40,11 @@ export default function SettingsScreen() {
     const [notifications, setNotifications] = useState(true);
     const [emailUpdates, setEmailUpdates] = useState(false);
 
+    const [memberName, setMemberName] = useState('');
+    const [memberEmail, setMemberEmail] = useState('');
+    const [memberPassword, setMemberPassword] = useState('');
+    const [collegeCode, setCollegeCode] = useState('E091');
+    const [creatingMember, setCreatingMember] = useState(false);
     const testAdminAccess = async () => {
         try {
             const response = await api.get('/admin/student-verifications');
@@ -81,6 +87,47 @@ export default function SettingsScreen() {
         }
     };
 
+    const createCommitteeMember = async () => {
+        if (!memberName.trim() || !memberEmail.trim() || !memberPassword || !collegeCode.trim()) {
+            Alert.alert('Missing information', 'Please fill in all fields.');
+            return;
+        }
+
+        if (memberPassword.length < 8) {
+            Alert.alert('Invalid password', 'Password must contain at least 8 characters.');
+            return;
+        }
+
+        setCreatingMember(true);
+
+        try {
+            const response = await api.post('/admin/committee-members', {
+                fullName: memberName.trim(),
+                email: memberEmail.trim().toLowerCase(),
+                password: memberPassword,
+                collegeCode: collegeCode.trim().toUpperCase(),
+            });
+
+            Alert.alert(
+                'Account created',
+                `${response.data.user.fullName} can now sign in as a Committee Member.`
+            );
+
+            setMemberName('');
+            setMemberEmail('');
+            setMemberPassword('');
+            setCollegeCode('E091');
+        } catch (error: any) {
+            console.error('Committee Member creation failed:', error.response?.data || error);
+
+            Alert.alert(
+                'Account creation failed',
+                error.response?.data?.message || 'Could not create the account.'
+            );
+        } finally {
+            setCreatingMember(false);
+        }
+    };
     const testApproveVerification = async () => {
         try {
             const response = await api.post(
@@ -350,6 +397,68 @@ export default function SettingsScreen() {
                 </Card>
 
 
+                {profile?.role === 'PLATFORM_ADMIN' && (
+                    <Card style={[styles.sectionCard, { backgroundColor: theme.colors.surface }]}>
+                        <Card.Content>
+                            <Text variant="titleMedium">
+                                Create Committee Member
+                            </Text>
+
+                            <Text
+                                variant="bodySmall"
+                                style={{ color: theme.colors.onSurfaceVariant, marginBottom: 12 }}
+                            >
+                                Create a staff account for a college.
+                            </Text>
+
+                            <TextInput
+                                label="Full name"
+                                value={memberName}
+                                onChangeText={setMemberName}
+                                mode="outlined"
+                                autoCapitalize="words"
+                                style={{ marginBottom: 12 }}
+                            />
+
+                            <TextInput
+                                label="Email address"
+                                value={memberEmail}
+                                onChangeText={setMemberEmail}
+                                mode="outlined"
+                                keyboardType="email-address"
+                                autoCapitalize="none"
+                                style={{ marginBottom: 12 }}
+                            />
+
+                            <TextInput
+                                label="Temporary password"
+                                value={memberPassword}
+                                onChangeText={setMemberPassword}
+                                mode="outlined"
+                                secureTextEntry
+                                style={{ marginBottom: 12 }}
+                            />
+
+                            <TextInput
+                                label="College code"
+                                value={collegeCode}
+                                onChangeText={setCollegeCode}
+                                mode="outlined"
+                                autoCapitalize="characters"
+                                style={{ marginBottom: 16 }}
+                            />
+
+                            <Button
+                                mode="contained"
+                                onPress={createCommitteeMember}
+                                loading={creatingMember}
+                                disabled={creatingMember}
+                            >
+                                Create account
+                            </Button>
+                        </Card.Content>
+                    </Card>
+                )}
                 {user && (
                     <Card
                         style={[

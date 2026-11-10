@@ -19,6 +19,7 @@ import {
   Divider,
   RadioButton,
 } from 'react-native-paper';
+import api from '@/lib/api';
 
 import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -26,18 +27,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 type IdentificationMethod = 'id_card' | 'no_id' | null;
 
 const categories = [
-  'Classroom Disruption',
-  'Misconduct',
-  'Property Damage',
-  'Bullying',
-  'Other',
+  'CLASSROOM_DISRUPTION',
+  'MISCONDUCT',
+  'PROPERTY_DAMAGE',
+  'BULLYING',
+  'INDISCIPLINE',
+  'OTHER',
 ];
 
 export default function ReportScreen() {
   const theme = useTheme();
 
   const [step, setStep] = useState(1);
-
+  const [isSubmitting, setIsSubmitting] = useState(false);
   // Identification
   const [method, setMethod] = useState<IdentificationMethod>(null);
   const [usn, setUsn] = useState('');
@@ -122,10 +124,9 @@ export default function ReportScreen() {
       return;
     }
 
-    setStudentName('Sample Student');
+    setStudentName('');
     setVerified(true);
   };
-
   const canContinue = () => {
     if (step === 1) {
       return method !== null;
@@ -136,7 +137,7 @@ export default function ReportScreen() {
         return verified;
       }
 
-      return !!personPhoto && personDescription.trim().length > 0;
+      return personDescription.trim().length > 0;
     }
 
     if (step === 3) {
@@ -180,17 +181,56 @@ export default function ReportScreen() {
     setEvidence([]);
   };
 
-  const submitReport = () => {
-    Alert.alert(
-      'Demo submission',
-      'Your report form is complete. Actual backend submission will be implemented later.',
-      [
-        {
-          text: 'OK',
-          onPress: resetForm,
-        },
-      ]
-    );
+  const submitReport = async () => {
+    if (isSubmitting) return;
+
+    if (!method) {
+      Alert.alert('Missing information', 'Select an identification method.');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const payload = {
+        category,
+        location: location.trim(),
+        description: description.trim(),
+        identificationMethod:
+          method === 'id_card' ? 'ID_CARD' : 'NO_ID',
+
+        ...(method === 'id_card'
+          ? {
+            student: {
+              usn: usn.trim(),
+            },
+          }
+          : {
+            personDescription: personDescription.trim(),
+          }),
+      };
+
+      const response = await api.post('/reports', payload);
+
+      Alert.alert(
+        'Report submitted',
+        `Report number: ${response.data.report.reportNumber}`,
+        [
+          {
+            text: 'OK',
+            onPress: resetForm,
+          },
+        ]
+      );
+    } catch (error: any) {
+      const message =
+        error.response?.data?.message ||
+        'Could not submit the report. Please check your connection and try again.';
+
+      Alert.alert('Submission failed', message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const stepTitles = [
@@ -476,12 +516,12 @@ export default function ReportScreen() {
             <View style={styles.chipContainer}>
               {categories.map(item => (
                 <Chip
-                  key={item}
+                  key={item.replaceAll('_', ' ').replace(/\b\w/g, char => char.toUpperCase())}
                   selected={category === item}
                   onPress={() => setCategory(item)}
                   style={styles.categoryChip}
                 >
-                  {item}
+                  {item.replaceAll('_', ' ').replace(/\b\w/g, char => char.toUpperCase())}
                 </Chip>
               ))}
             </View>
@@ -690,8 +730,10 @@ export default function ReportScreen() {
               onPress={submitReport}
               style={styles.flexButton}
               icon="send"
+              loading={isSubmitting}
+              disabled={isSubmitting}
             >
-              Submit report
+              {isSubmitting ? 'Submitting...' : 'Submit report'}
             </Button>
           )}
         </View>

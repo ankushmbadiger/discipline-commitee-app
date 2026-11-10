@@ -272,4 +272,90 @@ router.post(
     }
 );
 
+
+// GET /api/auth/student/cases
+// Return only cases associated with the authenticated, verified student.
+router.get(
+    "/student/cases",
+    authenticate,
+    requireActiveUser,
+    async (req, res, next) => {
+        try {
+            const appUser = req.appUser;
+
+            if (!appUser || appUser.role !== "STUDENT") {
+                res.status(403).json({
+                    message: "Only student accounts can access student cases.",
+                });
+                return;
+            }
+
+            const student = await prisma.student.findUnique({
+                where: {
+                    userId: appUser.id,
+                },
+                select: {
+                    id: true,
+                    usn: true,
+                    fullName: true,
+                },
+            });
+
+            if (!student) {
+                res.status(403).json({
+                    message: "Your student identity has not been verified yet.",
+                });
+                return;
+            }
+
+            const cases = await prisma.reportInvolvement.findMany({
+                where: {
+                    studentId: student.id,
+                },
+                orderBy: {
+                    createdAt: "desc",
+                },
+                select: {
+                    id: true,
+                    identityStatus: true,
+                    description: true,
+                    appeals: {
+                        select: {
+                            id: true,
+                            status: true,
+                            createdAt: true,
+                        },
+                        orderBy: {
+                            createdAt: "desc",
+                        },
+                    },
+                    report: {
+                        select: {
+                            id: true,
+                            reportNumber: true,
+                            category: true,
+                            status: true,
+                            incidentAt: true,
+                            createdAt: true,
+                            location: true,
+                        },
+                    },
+                },
+            });
+
+            res.status(200).json({
+                message: "Student cases retrieved successfully.",
+                data: {
+                    student,
+                    cases,
+                },
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+);
+
+
+
 export default router;
