@@ -308,4 +308,94 @@ router.patch("/:id", async (req, res, next) => {
   }
 });
 
+// PATCH /api/students/:id/status
+router.patch("/:id/status", async (req, res, next) => {
+  try {
+    const appUser = req.appUser!;
+    const studentId = req.params.id;
+    const { status } = req.body;
+
+    if (!isUuid(studentId)) {
+      res.status(400).json({ message: "Invalid student ID." });
+      return;
+    }
+
+    if (status !== "ACTIVE" && status !== "INACTIVE") {
+      res.status(400).json({
+        message: "Status must be ACTIVE or INACTIVE.",
+      });
+      return;
+    }
+
+    const scope =
+      appUser.role === "COLLEGE_ADMIN"
+        ? { id: studentId, collegeId: appUser.collegeId ?? "" }
+        : { id: studentId };
+
+    const existingStudent = await prisma.student.findFirst({
+      where: scope,
+    });
+
+    if (!existingStudent) {
+      res.status(404).json({ message: "Student not found." });
+      return;
+    }
+
+    if (existingStudent.status === "GRADUATED") {
+      res.status(400).json({
+        message: "Graduated students cannot have their status changed here.",
+      });
+      return;
+    }
+
+    if (existingStudent.status === status) {
+      res.status(400).json({
+        message: `Student is already ${status.toLowerCase()}.`,
+      });
+      return;
+    }
+
+    const student = await prisma.$transaction(async (tx) => {
+      const updatedStudent = await tx.student.update({
+        where: { id: studentId },
+        data: { status },
+        include: {
+          college: {
+            select: { id: true, name: true, code: true },
+          },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: appUser.id,
+          collegeId: existingStudent.collegeId,
+          action:
+            status === "INACTIVE"
+              ? "STUDENT_DEACTIVATED"
+              : "STUDENT_REACTIVATED",
+          entityType: "STUDENT",
+          entityId: studentId,
+          details: {
+            previousStatus: existingStudent.status,
+            newStatus: status,
+          },
+        },
+      });
+
+      return updatedStudent;
+    });
+
+    res.json({
+      message:
+        status === "INACTIVE"
+          ? "Student deactivated successfully."
+          : "Student reactivated successfully.",
+      student,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

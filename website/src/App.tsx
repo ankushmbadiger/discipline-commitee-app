@@ -9,6 +9,8 @@ import Login from "./pages/auth/Login";
 
 import { useAuth } from "./context/AuthContext";
 
+import Students from "./pages/dashboard/Students";
+
 function ProtectedRoute() {
   const { firebaseUser, appUser, loading } = useAuth();
 
@@ -68,7 +70,7 @@ export default function App() {
           <Route element={<DashboardLayout />}>
             <Route path="/" element={<Overview />} />
             <Route path="/colleges" element={<Placeholder title="Colleges" />} />
-            <Route path="/students" element={<Placeholder title="Student Management" />} />
+            <Route path="/students" element={<Students />} />
             <Route path="/accounts" element={<Placeholder title="Account Management" />} />
             <Route path="/reports" element={<Placeholder title="Reports" />} />
             <Route path="/audit-logs" element={<Placeholder title="Audit Logs" />} />
