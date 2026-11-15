@@ -8,6 +8,7 @@ import {
   Image,
   RefreshControl,
   Modal,
+  Alert,
 } from 'react-native';
 import {
   Text,
@@ -22,7 +23,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import api from '../../lib/api';
-
+import { useAuth } from '../../context/auth-context';
 type Evidence = {
   id: string;
   kind: 'IDENTIFICATION' | 'INCIDENT';
@@ -33,6 +34,7 @@ type Evidence = {
 
 type Report = {
   id: string;
+  createdById: string;
   reportNumber: string;
   category: string;
   description: string;
@@ -48,12 +50,13 @@ type Report = {
 export default function HomeScreen() {
   const router = useRouter();
   const theme = useTheme();
-
+  const { profile } = useAuth();
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
 
   const fetchReports = useCallback(async () => {
     try {
@@ -62,10 +65,6 @@ export default function HomeScreen() {
       const response = await api.get('/reports');
 
       setReports(response.data.reports ?? []);
-      console.log(
-        "First evidence URL:",
-        response.data.reports?.[0]?.evidence?.[0]?.url
-      );
     } catch (err: any) {
       setError(
         err.response?.data?.message ||
@@ -84,6 +83,44 @@ export default function HomeScreen() {
   const onRefresh = () => {
     setRefreshing(true);
     fetchReports();
+  };
+
+  const handleDeleteReport = (report: Report) => {
+    Alert.alert(
+      'Delete report?',
+      `Are you sure you want to delete report ${report.reportNumber}? This action cannot be undone.`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setDeletingReportId(report.id);
+
+              await api.delete(`/reports/${report.id}`);
+
+              setReports((previousReports) =>
+                previousReports.filter(
+                  (item) => item.id !== report.id
+                )
+              );
+            } catch (error: any) {
+              Alert.alert(
+                'Unable to delete report',
+                error.response?.data?.message ||
+                'Something went wrong. Please try again.'
+              );
+            } finally {
+              setDeletingReportId(null);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const getInitials = (name: string) => {
@@ -273,11 +310,20 @@ export default function HomeScreen() {
                     </Text>
                   </View>
 
-                  <IconButton
-                    icon="dots-vertical"
-                    size={21}
-                    onPress={() => { }}
-                  />
+                  {profile &&
+                    (profile.role === 'PLATFORM_ADMIN' ||
+                      (profile.role === 'COMMITTEE_MEMBER' &&
+                        profile.id === report.createdById)) && (
+                      deletingReportId === report.id ? (
+                        <ActivityIndicator size="small" />
+                      ) : (
+                        <IconButton
+                          icon="delete-outline"
+                          size={21}
+                          onPress={() => handleDeleteReport(report)}
+                        />
+                      )
+                    )}
                 </View>
 
                 <View style={styles.chipRow}>

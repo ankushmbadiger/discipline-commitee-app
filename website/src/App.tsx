@@ -10,6 +10,10 @@ import Login from "./pages/auth/Login";
 import { useAuth } from "./context/AuthContext";
 
 import Students from "./pages/dashboard/Students";
+import Colleges from "./pages/dashboard/Colleges";
+import Users from "./pages/dashboard/Users";
+import Reports from "./pages/dashboard/Reports";
+import AuditLogs from "./pages/dashboard/AuditLogs";
 
 function ProtectedRoute() {
   const { firebaseUser, appUser, loading } = useAuth();
@@ -36,15 +40,6 @@ function ProtectedRoute() {
   return <Outlet />;
 }
 
-function Placeholder({ title }: { title: string }) {
-  return (
-    <Box>
-      <h1>{title}</h1>
-      <p>This section is under development.</p>
-    </Box>
-  );
-}
-
 export default function App() {
   const { firebaseUser, appUser, loading } = useAuth();
 
@@ -69,11 +64,11 @@ export default function App() {
         <Route element={<ProtectedRoute />}>
           <Route element={<DashboardLayout />}>
             <Route path="/" element={<Overview />} />
-            <Route path="/colleges" element={<Placeholder title="Colleges" />} />
+            <Route path="/colleges" element={<Colleges />} />
             <Route path="/students" element={<Students />} />
-            <Route path="/accounts" element={<Placeholder title="Account Management" />} />
-            <Route path="/reports" element={<Placeholder title="Reports" />} />
-            <Route path="/audit-logs" element={<Placeholder title="Audit Logs" />} />
+            <Route path="/users" element={<Users />} />
+            <Route path="/reports" element={<Reports />} />
+            <Route path="/audit-logs" element={<AuditLogs />} />
           </Route>
         </Route>
 

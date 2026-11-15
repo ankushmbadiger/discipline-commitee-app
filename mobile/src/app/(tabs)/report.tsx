@@ -20,7 +20,7 @@ import {
   RadioButton,
 } from 'react-native-paper';
 import api from '@/lib/api';
-
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -41,26 +41,47 @@ const uploadEvidence = async (
   kind: 'IDENTIFICATION' | 'INCIDENT',
   involvementId?: string
 ) => {
-  const cleanUri = uri.split('?')[0];
-  const extension = cleanUri.split('.').pop()?.toLowerCase();
+  const dimensions = await new Promise<{
+    width: number;
+    height: number;
+  }>((resolve, reject) => {
+    Image.getSize(
+      uri,
+      (width, height) => resolve({ width, height }),
+      reject
+    );
+  });
 
-  const mimeType =
-    extension === 'png'
-      ? 'image/png'
-      : extension === 'webp'
-        ? 'image/webp'
-        : 'image/jpeg';
+  const maxDimension = 1600;
+  const resizeActions =
+    Math.max(dimensions.width, dimensions.height) > maxDimension
+      ? [
+          {
+            resize:
+              dimensions.width >= dimensions.height
+                ? { width: maxDimension }
+                : { height: maxDimension },
+          },
+        ]
+      : [];
 
-  const filename = `evidence-${Date.now()}.${extension || 'jpg'}`;
+  const compressedImage = await ImageManipulator.manipulateAsync(
+    uri,
+    resizeActions,
+    {
+      compress: 0.8,
+      format: ImageManipulator.SaveFormat.JPEG,
+    }
+  );
 
   const formData = new FormData();
 
   formData.append(
     'image',
     {
-      uri,
-      name: filename,
-      type: mimeType,
+      uri: compressedImage.uri,
+      name: `evidence-${Date.now()}.jpg`,
+      type: 'image/jpeg',
     } as any
   );
 

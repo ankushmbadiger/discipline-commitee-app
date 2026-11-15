@@ -38,7 +38,7 @@ const navigation = [
     { label: "Overview", path: "/", icon: <DashboardOutlined /> },
     { label: "Colleges", path: "/colleges", icon: <AccountBalanceOutlined /> },
     { label: "Students", path: "/students", icon: <GroupsOutlined /> },
-    { label: "Accounts", path: "/accounts", icon: <ManageAccountsOutlined /> },
+    { label: "Users", path: "/users", icon: <ManageAccountsOutlined /> },
     { label: "Reports", path: "/reports", icon: <ArticleOutlined /> },
     { label: "Audit Logs", path: "/audit-logs", icon: <HistoryOutlined /> },
 ];

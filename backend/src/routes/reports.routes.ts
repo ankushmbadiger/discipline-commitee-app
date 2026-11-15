@@ -1,8 +1,7 @@
-
 import { Router } from "express";
+import { DeleteObjectsCommand } from "@aws-sdk/client-s3";
 import { randomBytes } from "node:crypto";
-import prisma from "../lib/prisma.js";
-import { authenticate } from "../middleware/auth.middleware.js";
+import prisma from "../lib/prisma.js"; import { authenticate } from "../middleware/auth.middleware.js";
 import {
     requireActiveUser,
     requireRole,
@@ -39,6 +38,16 @@ router.get("/", async (_req, res, next) => {
                         name: true,
                     },
                 },
+                involvements: {
+                    select: {
+                        reportedName: true,
+                        reportedUsn: true,
+                        reportedDepartment: true,
+                        reportedSemester: true,
+                        identityStatus: true,
+                        description: true,
+                    },
+                },
                 evidence: {
                     select: {
                         id: true,
@@ -73,6 +82,7 @@ router.get("/", async (_req, res, next) => {
 
                 return {
                     id: report.id,
+                    createdById: report.createdById,
                     reportNumber: report.reportNumber,
                     category: report.category,
                     description: report.description,
@@ -82,6 +92,7 @@ router.get("/", async (_req, res, next) => {
                     teacher: report.creator.fullName,
                     teacherRole: report.creator.role,
                     college: report.college.name,
+                    involvements: report.involvements,
                     evidence: await Promise.all(
                         evidence.map(async (item) => {
                             const { GetObjectCommand } = await import(
@@ -120,6 +131,165 @@ router.get("/", async (_req, res, next) => {
         next(error);
     }
 });
+
+
+
+// DELETE /api/reports/:id
+// Committee members can delete their own reports.
+// Platform admins can delete any report.
+router.delete("/:id", authenticate, requireActiveUser, async (req, res, next) => {
+    try {
+        const appUser = req.appUser!;
+
+        if (
+            appUser.role !== "COMMITTEE_MEMBER" &&
+            appUser.role !== "PLATFORM_ADMIN"
+        ) {
+            res.status(403).json({
+                message: "You do not have permission to delete reports.",
+            });
+            return;
+        }
+
+        const reportIdParam = req.params.id;
+        const reportId = Array.isArray(reportIdParam)
+            ? reportIdParam[0]
+            : reportIdParam;
+
+        if (!reportId) {
+            res.status(400).json({
+                message: "A valid report ID is required.",
+            });
+            return;
+        }
+        const result = await prisma.$transaction(async (tx) => {
+            const report = await tx.report.findUnique({
+                where: { id: reportId },
+                select: {
+                    id: true,
+                    reportNumber: true,
+                    createdById: true,
+                    collegeId: true,
+                    evidence: {
+                        select: {
+                            fileKey: true,
+                        },
+                    },
+                    involvements: {
+                        select: {
+                            appeals: {
+                                select: {
+                                    id: true,
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            if (!report) {
+                return { status: "NOT_FOUND" as const };
+            }
+
+            if (
+                appUser.role === "COMMITTEE_MEMBER" &&
+                report.createdById !== appUser.id
+            ) {
+                return { status: "FORBIDDEN" as const };
+            }
+
+            const hasAppeals = report.involvements.some(
+                (involvement) => involvement.appeals.length > 0
+            );
+
+            if (hasAppeals) {
+                return { status: "HAS_APPEALS" as const };
+            }
+
+            await tx.auditLog.create({
+                data: {
+                    userId: appUser.id,
+                    collegeId: report.collegeId,
+                    action: "REPORT_DELETED",
+                    entityType: "REPORT",
+                    entityId: report.id,
+                    details: {
+                        reportNumber: report.reportNumber,
+                        deletedByRole: appUser.role,
+                    },
+                },
+            });
+
+            await tx.report.delete({
+                where: { id: report.id },
+            });
+
+            return {
+                status: "DELETED" as const,
+                reportNumber: report.reportNumber,
+                fileKeys: report.evidence.map((item) => item.fileKey),
+            };
+        });
+
+        if (result.status === "NOT_FOUND") {
+            res.status(404).json({ message: "Report not found." });
+            return;
+        }
+
+        if (result.status === "FORBIDDEN") {
+            res.status(403).json({
+                message: "You can only delete reports created by you.",
+            });
+            return;
+        }
+
+        if (result.status === "HAS_APPEALS") {
+            res.status(409).json({
+                message: "This report cannot be deleted because it has associated appeals.",
+            });
+            return;
+        }
+
+        // Remove evidence objects from Filebase after the database transaction.
+        try {
+            for (let i = 0; i < result.fileKeys.length; i += 1000) {
+                const batch = result.fileKeys.slice(i, i + 1000);
+
+                const response = await filebaseClient.send(
+                    new DeleteObjectsCommand({
+                        Bucket: filebaseBucket,
+                        Delete: {
+                            Objects: batch.map((Key) => ({ Key })),
+                            Quiet: true,
+                        },
+                    })
+                );
+
+                if (response.Errors?.length) {
+                    console.error(
+                        "Some report evidence files could not be deleted from Filebase:",
+                        response.Errors
+                    );
+                }
+            }
+        } catch (storageError) {
+            console.error(
+                "Failed to clean up report evidence from Filebase:",
+                storageError
+            );
+        }
+
+        res.json({
+            message: "Report deleted successfully.",
+            reportNumber: result.reportNumber,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+
+
 
 // Committee members only: create reports.
 router.use(

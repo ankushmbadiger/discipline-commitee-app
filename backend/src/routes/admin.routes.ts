@@ -9,6 +9,216 @@ import {
 import { getFirebaseAdminAuth } from "../lib/firebase-admin.js";
 
 const router = Router();
+// Every route in this file requires an active platform administrator.
+router.use(authenticate, requireActiveUser, requireRole("PLATFORM_ADMIN"));
+
+// GET /api/admin/users
+// List platform users with optional filters.
+router.get("/users", async (req, res, next) => {
+    try {
+        const search =
+            typeof req.query.search === "string"
+                ? req.query.search.trim()
+                : "";
+
+        const role =
+            typeof req.query.role === "string"
+                ? req.query.role
+                : undefined;
+
+        const collegeId =
+            typeof req.query.collegeId === "string"
+                ? req.query.collegeId
+                : undefined;
+
+        const accountStatus =
+            typeof req.query.accountStatus === "string"
+                ? req.query.accountStatus
+                : undefined;
+
+        const users = await prisma.user.findMany({
+            where: {
+                ...(search
+                    ? {
+                        OR: [
+                            {
+                                fullName: {
+                                    contains: search,
+                                    mode: "insensitive",
+                                },
+                            },
+                            {
+                                email: {
+                                    contains: search,
+                                    mode: "insensitive",
+                                },
+                            },
+                        ],
+                    }
+                    : {}),
+                ...(role ? { role: role as any } : {}),
+                ...(collegeId ? { collegeId } : {}),
+                ...(accountStatus
+                    ? { accountStatus: accountStatus as any }
+                    : {}),
+            },
+            select: {
+                id: true,
+                fullName: true,
+                email: true,
+                role: true,
+                accountStatus: true,
+                createdAt: true,
+                college: {
+                    select: {
+                        id: true,
+                        name: true,
+                        code: true,
+                    },
+                },
+            },
+            orderBy: {
+                createdAt: "desc",
+            },
+            take: 200,
+        });
+
+        res.json({ users });
+    } catch (error) {
+        next(error);
+    }
+});
+
+
+// PATCH /api/admin/users/:id/status
+// Activate, suspend, or disable a user account.
+router.patch("/users/:id/status", async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const { accountStatus } = req.body;
+
+        const allowedStatuses = ["ACTIVE", "SUSPENDED", "DISABLED"];
+
+        if (!allowedStatuses.includes(accountStatus)) {
+            res.status(400).json({
+                message: "Invalid account status.",
+            });
+            return;
+        }
+
+        // Prevent the logged-in administrator from disabling themselves.
+        if (req.appUser?.id === id) {
+            res.status(400).json({
+                message: "You cannot change your own account status.",
+            });
+            return;
+        }
+
+        const targetUser = await prisma.user.findUnique({
+            where: { id },
+            select: {
+                id: true,
+                fullName: true,
+                email: true,
+                firebaseUid: true,
+                role: true,
+                accountStatus: true,
+            },
+        });
+
+        if (!targetUser) {
+            res.status(404).json({
+                message: "User not found.",
+            });
+            return;
+        }
+
+        if (targetUser.accountStatus === accountStatus) {
+            res.json({
+                message: "User already has this account status.",
+                user: {
+                    id: targetUser.id,
+                    fullName: targetUser.fullName,
+                    email: targetUser.email,
+                    role: targetUser.role,
+                    accountStatus: targetUser.accountStatus,
+                },
+            });
+            return;
+        }
+
+        const firebaseAuth = getFirebaseAdminAuth();
+
+        const previousDisabled = targetUser.accountStatus !== "ACTIVE";
+        const nextDisabled = accountStatus !== "ACTIVE";
+
+        // Update Firebase first so sign-in access is synchronized.
+        await firebaseAuth.updateUser(targetUser.firebaseUid, {
+            disabled: nextDisabled,
+        });
+
+        try {
+            const updatedUser = await prisma.$transaction(async (tx) => {
+                const user = await tx.user.update({
+                    where: { id },
+                    data: { accountStatus },
+                    select: {
+                        id: true,
+                        fullName: true,
+                        email: true,
+                        role: true,
+                        accountStatus: true,
+                        createdAt: true,
+                        college: {
+                            select: {
+                                id: true,
+                                name: true,
+                                code: true,
+                            },
+                        },
+                    },
+                });
+
+                await tx.auditLog.create({
+                    data: {
+                        userId: req.appUser!.id,
+                        action: "USER_ACCOUNT_STATUS_CHANGED",
+                        entityType: "USER",
+                        entityId: id,
+                        details: {
+                            previousStatus: targetUser.accountStatus,
+                            newStatus: accountStatus,
+                            targetEmail: targetUser.email,
+                        },
+                    },
+                });
+
+                return user;
+            });
+
+            res.json({
+                message: "User account status updated successfully.",
+                user: updatedUser,
+            });
+        } catch (databaseError) {
+            // Restore Firebase if the database update fails.
+            try {
+                await firebaseAuth.updateUser(targetUser.firebaseUid, {
+                    disabled: previousDisabled,
+                });
+            } catch (rollbackError) {
+                console.error("Firebase status rollback failed:", rollbackError);
+            }
+
+            throw databaseError;
+        }
+    } catch (error) {
+        next(error);
+    }
+});
+
+
+
 // GET /api/admin/colleges
 // List colleges for Platform Admin.
 router.get("/colleges", async (_req, res, next) => {
@@ -18,6 +228,13 @@ router.get("/colleges", async (_req, res, next) => {
                 id: true,
                 name: true,
                 code: true,
+                status: true,
+                createdAt: true,
+                _count: {
+                    select: {
+                        students: true,
+                    },
+                },
             },
             orderBy: {
                 name: "asc",
@@ -29,6 +246,199 @@ router.get("/colleges", async (_req, res, next) => {
         next(error);
     }
 });
+
+
+// POST /api/admin/colleges
+// Create a new college.
+router.post("/colleges", async (req, res) => {
+    const name =
+        typeof req.body?.name === "string" ? req.body.name.trim() : "";
+
+    const code =
+        typeof req.body?.code === "string"
+            ? req.body.code.trim().toUpperCase()
+            : "";
+
+    if (!name || !code) {
+        res.status(400).json({
+            message: "College name and code are required.",
+        });
+        return;
+    }
+
+    if (name.length > 150) {
+        res.status(400).json({
+            message: "College name cannot exceed 150 characters.",
+        });
+        return;
+    }
+
+    if (!/^[A-Z0-9_-]{2,20}$/.test(code)) {
+        res.status(400).json({
+            message: "College code must be 2–20 characters and contain only letters, numbers, hyphens, or underscores.",
+        });
+        return;
+    }
+
+    try {
+        const college = await prisma.$transaction(async (tx) => {
+            const createdCollege = await tx.college.create({
+                data: {
+                    name,
+                    code,
+                },
+                select: {
+                    id: true,
+                    name: true,
+                    code: true,
+                    status: true,
+                    createdAt: true,
+                },
+            });
+
+            await tx.auditLog.create({
+                data: {
+                    userId: req.appUser!.id,
+                    collegeId: createdCollege.id,
+                    action: "COLLEGE_CREATED",
+                    entityType: "College",
+                    entityId: createdCollege.id,
+                    details: {
+                        name,
+                        code,
+                    },
+                },
+            });
+
+            return createdCollege;
+        });
+
+        res.status(201).json({
+            message: "College created successfully.",
+            college,
+        });
+    } catch (error: any) {
+        if (error.code === "P2002") {
+            res.status(409).json({
+                message: "A college with this code already exists.",
+            });
+            return;
+        }
+
+        throw error;
+    }
+});
+
+
+// PATCH /api/admin/colleges/:id
+// Update a college's name and code.
+router.patch("/colleges/:id", async (req, res) => {
+    const { id } = req.params;
+
+    const name =
+        typeof req.body?.name === "string" ? req.body.name.trim() : "";
+
+    const code =
+        typeof req.body?.code === "string"
+            ? req.body.code.trim().toUpperCase()
+            : "";
+
+    if (!name || !code) {
+        res.status(400).json({
+            message: "College name and code are required.",
+        });
+        return;
+    }
+
+    if (name.length > 150) {
+        res.status(400).json({
+            message: "College name cannot exceed 150 characters.",
+        });
+        return;
+    }
+
+    if (!/^[A-Z0-9_-]{2,20}$/.test(code)) {
+        res.status(400).json({
+            message: "College code must be 2–20 characters and contain only letters, numbers, hyphens, or underscores.",
+        });
+        return;
+    }
+
+    try {
+        const existingCollege = await prisma.college.findUnique({
+            where: { id },
+            select: { id: true },
+        });
+
+        if (!existingCollege) {
+            res.status(404).json({
+                message: "College not found.",
+            });
+            return;
+        }
+
+        const college = await prisma.$transaction(async (tx) => {
+            const updatedCollege = await tx.college.update({
+                where: { id },
+                data: {
+                    name,
+                    code,
+                },
+                select: {
+                    id: true,
+                    name: true,
+                    code: true,
+                    status: true,
+                    createdAt: true,
+                    updatedAt: true,
+                    _count: {
+                        select: {
+                            students: true,
+                        },
+                    },
+                },
+            });
+
+            await tx.auditLog.create({
+                data: {
+                    userId: req.appUser!.id,
+                    collegeId: id,
+                    action: "COLLEGE_UPDATED",
+                    entityType: "College",
+                    entityId: id,
+                    details: {
+                        name,
+                        code,
+                    },
+                },
+            });
+
+            return updatedCollege;
+        });
+
+        res.status(200).json({
+            message: "College updated successfully.",
+            college,
+        });
+    } catch (error: any) {
+        if (error.code === "P2002") {
+            res.status(409).json({
+                message: "A college with this code already exists.",
+            });
+            return;
+        }
+
+        if (error.code === "P2025") {
+            res.status(404).json({
+                message: "College not found.",
+            });
+            return;
+        }
+
+        throw error;
+    }
+});
+
 
 
 // Every route in this file requires an active platform administrator.
@@ -231,6 +641,90 @@ router.post("/student-verifications/:id/approve", async (req, res) => {
             timeout: 20000,
         }
     );
+
+
+
+    // PATCH /api/admin/colleges/:id/status
+    // Activate or deactivate a college.
+    router.patch("/colleges/:id/status", async (req, res) => {
+        const { id } = req.params;
+        const status = req.body?.status;
+
+        if (status !== "ACTIVE" && status !== "INACTIVE") {
+            res.status(400).json({
+                message: "Status must be ACTIVE or INACTIVE.",
+            });
+            return;
+        }
+
+        try {
+            const college = await prisma.$transaction(async (tx) => {
+                const existingCollege = await tx.college.findUnique({
+                    where: { id },
+                    select: {
+                        id: true,
+                        name: true,
+                        status: true,
+                    },
+                });
+
+                if (!existingCollege) {
+                    return null;
+                }
+
+                const updatedCollege = await tx.college.update({
+                    where: { id },
+                    data: { status },
+                    select: {
+                        id: true,
+                        name: true,
+                        code: true,
+                        status: true,
+                        _count: {
+                            select: {
+                                students: true,
+                            },
+                        },
+                    },
+                });
+
+                await tx.auditLog.create({
+                    data: {
+                        userId: req.appUser!.id,
+                        collegeId: id,
+                        action:
+                            status === "ACTIVE"
+                                ? "COLLEGE_ACTIVATED"
+                                : "COLLEGE_DEACTIVATED",
+                        entityType: "College",
+                        entityId: id,
+                        details: {
+                            previousStatus: existingCollege.status,
+                            newStatus: status,
+                        },
+                    },
+                });
+
+                return updatedCollege;
+            });
+
+            if (!college) {
+                res.status(404).json({
+                    message: "College not found.",
+                });
+                return;
+            }
+
+            res.status(200).json({
+                message: `College ${status.toLowerCase()} successfully.`,
+                college,
+            });
+        } catch (error) {
+            throw error;
+        }
+    });
+
+
 
     if (result.kind === "NOT_FOUND") {
         res.status(404).json({ message: "Verification request not found." });
@@ -516,6 +1010,117 @@ router.post("/committee-members", async (req, res) => {
         res.status(500).json({
             message: "Unable to create Committee Member account.",
         });
+    }
+});
+
+
+
+
+// GET /api/admin/audit-logs
+// Retrieve paginated audit logs for the platform administrator.
+router.get("/audit-logs", async (req, res, next) => {
+    try {
+        const search =
+            typeof req.query.search === "string"
+                ? req.query.search.trim()
+                : "";
+
+        const action =
+            typeof req.query.action === "string"
+                ? req.query.action.trim()
+                : "";
+
+        const entityType =
+            typeof req.query.entityType === "string"
+                ? req.query.entityType.trim()
+                : "";
+
+        const page = Math.max(
+            1,
+            Number.parseInt(String(req.query.page ?? "1"), 10) || 1
+        );
+
+        const limit = 50;
+        const skip = (page - 1) * limit;
+
+        const where: any = {};
+
+        if (action) {
+            where.action = action;
+        }
+
+        if (entityType) {
+            where.entityType = entityType;
+        }
+
+        if (search) {
+            where.OR = [
+                { action: { contains: search, mode: "insensitive" } },
+                { entityType: { contains: search, mode: "insensitive" } },
+                { entityId: { contains: search, mode: "insensitive" } },
+                {
+                    user: {
+                        is: {
+                            OR: [
+                                {
+                                    fullName: {
+                                        contains: search,
+                                        mode: "insensitive",
+                                    },
+                                },
+                                {
+                                    email: {
+                                        contains: search,
+                                        mode: "insensitive",
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ];
+        }
+
+        const [auditLogs, total] = await Promise.all([
+            prisma.auditLog.findMany({
+                where,
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            fullName: true,
+                            email: true,
+                            role: true,
+                        },
+                    },
+                    college: {
+                        select: {
+                            id: true,
+                            name: true,
+                            code: true,
+                        },
+                    },
+                },
+                orderBy: {
+                    createdAt: "desc",
+                },
+                skip,
+                take: limit,
+            }),
+            prisma.auditLog.count({ where }),
+        ]);
+
+        res.json({
+            auditLogs,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit),
+            },
+        });
+    } catch (error) {
+        next(error);
     }
 });
 
