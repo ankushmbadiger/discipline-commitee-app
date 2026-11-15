@@ -35,11 +35,60 @@ const categories = [
   'OTHER',
 ];
 
+const uploadEvidence = async (
+  reportId: string,
+  uri: string,
+  kind: 'IDENTIFICATION' | 'INCIDENT',
+  involvementId?: string
+) => {
+  const cleanUri = uri.split('?')[0];
+  const extension = cleanUri.split('.').pop()?.toLowerCase();
+
+  const mimeType =
+    extension === 'png'
+      ? 'image/png'
+      : extension === 'webp'
+        ? 'image/webp'
+        : 'image/jpeg';
+
+  const filename = `evidence-${Date.now()}.${extension || 'jpg'}`;
+
+  const formData = new FormData();
+
+  formData.append(
+    'image',
+    {
+      uri,
+      name: filename,
+      type: mimeType,
+    } as any
+  );
+
+  formData.append('kind', kind);
+
+  if (involvementId) {
+    formData.append('involvementId', involvementId);
+  }
+
+  await api.post(`/evidence/${reportId}`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+};
+
 export default function ReportScreen() {
   const theme = useTheme();
 
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [createdReport, setCreatedReport] = useState<{
+    id: string;
+    reportNumber: string;
+    involvementId?: string;
+  } | null>(null);
+
+  const [uploadedImageUris, setUploadedImageUris] = useState<string[]>([]);
   // Identification
   const [method, setMethod] = useState<IdentificationMethod>(null);
   const [usn, setUsn] = useState('');
@@ -179,7 +228,10 @@ export default function ReportScreen() {
     setLocation('');
     setDescription('');
     setEvidence([]);
+    setCreatedReport(null);
+    setUploadedImageUris([]);
   };
+
 
   const submitReport = async () => {
     if (isSubmitting) return;
@@ -191,30 +243,85 @@ export default function ReportScreen() {
 
     setIsSubmitting(true);
 
+    let reportWasCreated = Boolean(createdReport);
+
     try {
-      const payload = {
-        category,
-        location: location.trim(),
-        description: description.trim(),
-        identificationMethod:
-          method === 'id_card' ? 'ID_CARD' : 'NO_ID',
+      let reportToUpload = createdReport;
 
-        ...(method === 'id_card'
-          ? {
-            student: {
-              usn: usn.trim(),
-            },
-          }
-          : {
-            personDescription: personDescription.trim(),
-          }),
-      };
+      // Create the report only once.
+      if (!reportToUpload) {
+        const payload = {
+          category,
+          location: location.trim(),
+          description: description.trim(),
+          identificationMethod:
+            method === 'id_card' ? 'ID_CARD' : 'NO_ID',
 
-      const response = await api.post('/reports', payload);
+          ...(method === 'id_card'
+            ? {
+              student: {
+                usn: usn.trim(),
+              },
+            }
+            : {
+              personDescription: personDescription.trim(),
+            }),
+        };
+
+        const response = await api.post('/reports', payload);
+        const reportData = response.data.report;
+
+        reportToUpload = {
+          id: reportData.id,
+          reportNumber: reportData.reportNumber,
+          involvementId: reportData.involvements?.[0]?.id,
+        };
+
+        setCreatedReport(reportToUpload);
+        reportWasCreated = true;
+      }
+
+      const images: {
+        uri: string;
+        kind: 'IDENTIFICATION' | 'INCIDENT';
+      }[] = [];
+
+      if (method === 'no_id' && personPhoto) {
+        images.push({
+          uri: personPhoto,
+          kind: 'IDENTIFICATION',
+        });
+      }
+
+      evidence.forEach(uri => {
+        images.push({
+          uri,
+          kind: 'INCIDENT',
+        });
+      });
+
+      // Upload images sequentially.
+      for (const image of images) {
+        if (uploadedImageUris.includes(image.uri)) {
+          continue;
+        }
+
+        await uploadEvidence(
+          reportToUpload.id,
+          image.uri,
+          image.kind,
+          reportToUpload.involvementId
+        );
+
+        setUploadedImageUris(previous => [
+          ...previous,
+          image.uri,
+        ]);
+      }
 
       Alert.alert(
         'Report submitted',
-        `Report number: ${response.data.report.reportNumber}`,
+        `Report number: ${reportToUpload.reportNumber}`,
         [
           {
             text: 'OK',
@@ -225,13 +332,23 @@ export default function ReportScreen() {
     } catch (error: any) {
       const message =
         error.response?.data?.message ||
-        'Could not submit the report. Please check your connection and try again.';
+        error.message ||
+        'Please check your connection and try again.';
 
-      Alert.alert('Submission failed', message);
+      if (reportWasCreated) {
+        Alert.alert(
+          'Report saved, upload incomplete',
+          `Your report has been created, but an image could not be uploaded. ${message} Tap Submit report again to retry without creating a duplicate report.`
+        );
+      } else {
+        Alert.alert('Submission failed', message);
+      }
     } finally {
       setIsSubmitting(false);
     }
   };
+
+
 
   const stepTitles = [
     'Identify student',

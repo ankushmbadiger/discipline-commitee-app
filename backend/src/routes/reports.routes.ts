@@ -7,7 +7,7 @@ import {
     requireActiveUser,
     requireRole,
 } from "../middleware/authorization.middleware.js";
-
+import { filebaseClient, filebaseBucket } from "../lib/filebase.js";
 const router = Router();
 
 const categories = [
@@ -19,12 +19,114 @@ const categories = [
     "OTHER",
 ] as const;
 
+// GET /api/reports
+// Public feed of disciplinary reports.
+router.get("/", async (_req, res, next) => {
+    try {
+        const reports = await prisma.report.findMany({
+            orderBy: {
+                createdAt: "desc",
+            },
+            include: {
+                creator: {
+                    select: {
+                        fullName: true,
+                        role: true,
+                    },
+                },
+                college: {
+                    select: {
+                        name: true,
+                    },
+                },
+                evidence: {
+                    select: {
+                        id: true,
+                        kind: true,
+                        filename: true,
+                        mimeType: true,
+                    },
+                    orderBy: {
+                        createdAt: "asc",
+                    },
+                },
+            },
+        });
+
+        const reportsWithImages = await Promise.all(
+            reports.map(async (report) => {
+                const evidence = await prisma.evidence.findMany({
+                    where: {
+                        reportId: report.id,
+                    },
+                    select: {
+                        id: true,
+                        fileKey: true,
+                        kind: true,
+                        filename: true,
+                        mimeType: true,
+                    },
+                    orderBy: {
+                        createdAt: "asc",
+                    },
+                });
+
+                return {
+                    id: report.id,
+                    reportNumber: report.reportNumber,
+                    category: report.category,
+                    description: report.description,
+                    location: report.location,
+                    status: report.status,
+                    createdAt: report.createdAt,
+                    teacher: report.creator.fullName,
+                    teacherRole: report.creator.role,
+                    college: report.college.name,
+                    evidence: await Promise.all(
+                        evidence.map(async (item) => {
+                            const { GetObjectCommand } = await import(
+                                "@aws-sdk/client-s3"
+                            );
+                            const { getSignedUrl } = await import(
+                                "@aws-sdk/s3-request-presigner"
+                            );
+
+                            const url = await getSignedUrl(
+                                filebaseClient,
+                                new GetObjectCommand({
+                                    Bucket: filebaseBucket,
+                                    Key: item.fileKey,
+                                }),
+                                { expiresIn: 3600 }
+                            );
+
+                            return {
+                                id: item.id,
+                                kind: item.kind,
+                                filename: item.filename,
+                                mimeType: item.mimeType,
+                                url,
+                            };
+                        })
+                    ),
+                };
+            })
+        );
+
+        res.json({
+            reports: reportsWithImages,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// Committee members only: create reports.
 router.use(
     authenticate,
     requireActiveUser,
     requireRole("COMMITTEE_MEMBER")
 );
-
 // POST /api/reports
 // Create a disciplinary report.
 router.post("/", async (req, res, next) => {

@@ -9,6 +9,27 @@ import {
 import { getFirebaseAdminAuth } from "../lib/firebase-admin.js";
 
 const router = Router();
+// GET /api/admin/colleges
+// List colleges for Platform Admin.
+router.get("/colleges", async (_req, res, next) => {
+    try {
+        const colleges = await prisma.college.findMany({
+            select: {
+                id: true,
+                name: true,
+                code: true,
+            },
+            orderBy: {
+                name: "asc",
+            },
+        });
+
+        res.json({ colleges });
+    } catch (error) {
+        next(error);
+    }
+});
+
 
 // Every route in this file requires an active platform administrator.
 router.use(authenticate, requireActiveUser, requireRole("PLATFORM_ADMIN"));
