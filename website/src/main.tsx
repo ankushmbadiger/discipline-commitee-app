@@ -4,12 +4,16 @@ import { createRoot } from "react-dom/client";
 
 import App from "./App";
 import { ThemeModeProvider } from "./context/ThemeModeContext";
+import { AuthProvider } from "./context/AuthContext";
+
 import "./index.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeModeProvider>
-      <App />
+      <AuthProvider>
+        <App />
+      </AuthProvider>
     </ThemeModeProvider>
   </StrictMode>,
 );
