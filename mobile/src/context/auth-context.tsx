@@ -46,6 +46,11 @@ export interface ApplicationProfile {
         createdAt: string;
         reviewedAt: string | null;
     }[];
+    permissions: {
+        canReviewStudentVerifications: boolean;
+        canManageCommitteeMembers: boolean;
+        canManageVerificationPermissions: boolean;
+    };
 }
 
 interface AuthContextType {

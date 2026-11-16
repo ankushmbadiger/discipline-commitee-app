@@ -76,9 +76,38 @@ router.get(
                 return;
             }
 
+            const hasDelegatedVerificationPermission =
+                user.role === "COMMITTEE_MEMBER" && user.college
+                    ? await prisma.committeeVerificationPermission.findFirst({
+                        where: {
+                            userId: user.id,
+                            collegeId: user.college.id,
+                            revokedAt: null,
+                        },
+                        select: {
+                            id: true,
+                        },
+                    })
+                    : null;
+
+            const permissions = {
+                canReviewStudentVerifications:
+                    user.role === "PLATFORM_ADMIN" ||
+                    user.role === "COLLEGE_ADMIN" ||
+                    Boolean(hasDelegatedVerificationPermission),
+
+                canManageCommitteeMembers:
+                    user.role === "COLLEGE_ADMIN",
+
+                canManageVerificationPermissions:
+                    user.role === "COLLEGE_ADMIN",
+            };
             res.status(200).json({
                 message: "Profile retrieved successfully.",
-                data: user,
+                data: {
+                    ...user,
+                    permissions,
+                },
             });
         } catch (error) {
             next(error);

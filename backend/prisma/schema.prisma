@@ -104,11 +104,12 @@ model College {
   createdAt DateTime      @default(now()) @db.Timestamptz(6)
   updatedAt DateTime      @updatedAt @db.Timestamptz(6)
 
-  users     User[]
-  students  Student[]
-  reports   Report[]
-  notices   PublicNotice[]
-  auditLogs AuditLog[]
+  users                   User[]
+  students                Student[]
+  reports                 Report[]
+  verificationPermissions CommitteeVerificationPermission[]
+  notices                 PublicNotice[]
+  auditLogs               AuditLog[]
 }
 
 // USER
@@ -146,8 +147,11 @@ model User {
   auditLogs        AuditLog[]
   publishedNotices PublicNotice[] @relation("NoticePublisher")
 
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+  verificationPermissions CommitteeVerificationPermission[] @relation("VerificationPermissionRecipient")
+  permissionsGranted      CommitteeVerificationPermission[] @relation("VerificationPermissionGrantor")
+  permissionsRevoked      CommitteeVerificationPermission[] @relation("VerificationPermissionRevoker")
+  createdAt               DateTime                          @default(now()) @db.Timestamptz(6)
+  updatedAt               DateTime                          @updatedAt @db.Timestamptz(6)
 
   @@index([collegeId])
   @@index([role, accountStatus])
@@ -441,4 +445,29 @@ model PublicNotice {
   updatedAt DateTime @updatedAt @db.Timestamptz(6)
 
   @@index([collegeId, status, publishedAt])
+}
+
+// COMMITTEE VERIFICATION PERMISSIONS
+
+model CommitteeVerificationPermission {
+  id         String @id @default(uuid()) @db.Uuid
+  userId     String @db.Uuid
+  collegeId  String @db.Uuid
+  grantedById String @db.Uuid
+  revokedById String? @db.Uuid
+
+  user User @relation("VerificationPermissionRecipient", fields: [userId], references: [id], onDelete: Restrict)
+
+  college College @relation(fields: [collegeId], references: [id], onDelete: Restrict)
+
+  grantedBy User @relation("VerificationPermissionGrantor", fields: [grantedById], references: [id], onDelete: Restrict)
+
+  revokedBy User? @relation("VerificationPermissionRevoker", fields: [revokedById], references: [id], onDelete: SetNull)
+
+  grantedAt DateTime @default(now()) @db.Timestamptz(6)
+  revokedAt DateTime? @db.Timestamptz(6)
+
+  @@index([userId, collegeId, revokedAt])
+  @@index([collegeId, revokedAt])
+  @@index([grantedById])
 }

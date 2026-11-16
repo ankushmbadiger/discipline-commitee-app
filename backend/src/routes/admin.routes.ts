@@ -202,6 +202,7 @@ router.patch("/users/:id/status", async (req, res, next) => {
                 firebaseUid: true,
                 role: true,
                 accountStatus: true,
+                collegeId: true,
             },
         });
 
@@ -212,6 +213,28 @@ router.patch("/users/:id/status", async (req, res, next) => {
             return;
         }
 
+        // Prevent deactivating the last active College Admin.
+        if (
+            targetUser.role === "COLLEGE_ADMIN" &&
+            targetUser.accountStatus === "ACTIVE" &&
+            accountStatus !== "ACTIVE"
+        ) {
+            const activeCollegeAdmins = await prisma.user.count({
+                where: {
+                    collegeId: targetUser.collegeId,
+                    role: "COLLEGE_ADMIN",
+                    accountStatus: "ACTIVE",
+                },
+            });
+
+            if (activeCollegeAdmins <= 1) {
+                res.status(400).json({
+                    message:
+                        "Cannot deactivate the last active College Admin of this college.",
+                });
+                return;
+            }
+        }
         if (targetUser.accountStatus === accountStatus) {
             res.json({
                 message: "User already has this account status.",
@@ -860,6 +883,177 @@ router.post("/student-verifications/:id/reject", async (req, res) => {
 
 
 // POST /api/admin/committee-members
+
+// POST /api/admin/college-admins
+// Create a College Admin account.
+router.post("/college-admins", async (req, res) => {
+    const fullName =
+        typeof req.body?.fullName === "string"
+            ? req.body.fullName.trim()
+            : "";
+
+    const email =
+        typeof req.body?.email === "string"
+            ? req.body.email.trim().toLowerCase()
+            : "";
+
+    const password =
+        typeof req.body?.password === "string"
+            ? req.body.password
+            : "";
+
+    const collegeCode =
+        typeof req.body?.collegeCode === "string"
+            ? req.body.collegeCode.trim().toUpperCase()
+            : "";
+
+    if (!fullName || !email || !collegeCode) {
+        res.status(400).json({
+            message: "Full name, email, and college code are required.",
+        });
+        return;
+    }
+
+    if (password.length < 8) {
+        res.status(400).json({
+            message: "Password must contain at least 8 characters.",
+        });
+        return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        res.status(400).json({
+            message: "Please provide a valid email address.",
+        });
+        return;
+    }
+
+    const college = await prisma.college.findUnique({
+        where: { code: collegeCode },
+        select: {
+            id: true,
+            name: true,
+            code: true,
+            status: true,
+        },
+    });
+
+    if (!college) {
+        res.status(404).json({
+            message: "College not found. Check the college code.",
+        });
+        return;
+    }
+
+    if (college.status !== "ACTIVE") {
+        res.status(400).json({
+            message: "Cannot create an administrator for an inactive college.",
+        });
+        return;
+    }
+
+    const existingUser = await prisma.user.findUnique({
+        where: { email },
+    });
+
+    if (existingUser) {
+        res.status(409).json({
+            message: "An account with this email already exists.",
+        });
+        return;
+    }
+
+    const firebaseAuth = getFirebaseAdminAuth();
+    let firebaseUid: string | undefined;
+
+    try {
+        const firebaseUser = await firebaseAuth.createUser({
+            email,
+            password,
+            displayName: fullName,
+            emailVerified: false,
+            disabled: false,
+        });
+
+        firebaseUid = firebaseUser.uid;
+
+        const createdUser = await prisma.$transaction(async (tx) => {
+            const user = await tx.user.create({
+                data: {
+                    firebaseUid: firebaseUser.uid,
+                    email,
+                    fullName,
+                    role: "COLLEGE_ADMIN",
+                    accountStatus: "ACTIVE",
+                    collegeId: college.id,
+                },
+                select: {
+                    id: true,
+                    email: true,
+                    fullName: true,
+                    role: true,
+                    accountStatus: true,
+                    college: {
+                        select: {
+                            id: true,
+                            name: true,
+                            code: true,
+                        },
+                    },
+                },
+            });
+
+            await tx.auditLog.create({
+                data: {
+                    userId: req.appUser!.id,
+                    collegeId: college.id,
+                    action: "COLLEGE_ADMIN_CREATED",
+                    entityType: "User",
+                    entityId: user.id,
+                    details: {
+                        email,
+                        role: "COLLEGE_ADMIN",
+                    },
+                },
+            });
+
+            return user;
+        });
+
+        res.status(201).json({
+            message: "College Admin account created successfully.",
+            user: createdUser,
+        });
+    } catch (error: any) {
+        if (firebaseUid) {
+            try {
+                await firebaseAuth.deleteUser(firebaseUid);
+            } catch (cleanupError) {
+                console.error(
+                    "Firebase account cleanup failed:",
+                    cleanupError
+                );
+            }
+        }
+
+        if (
+            error.code === "auth/email-already-exists" ||
+            error.code === "P2002"
+        ) {
+            res.status(409).json({
+                message: "An account with this email already exists.",
+            });
+            return;
+        }
+
+        console.error("College Admin creation failed:", error);
+
+        res.status(500).json({
+            message: "Unable to create College Admin account.",
+        });
+    }
+});
+
 // Create a Committee Member account.
 router.post("/committee-members", async (req, res) => {
     const fullName =

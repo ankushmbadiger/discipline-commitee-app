@@ -85,3 +85,88 @@ export function requireRole(...allowedRoles: string[]) {
     next();
   };
 }
+
+
+
+export async function requireVerificationPermission(
+    req: Request,
+    res: Response,
+    next: NextFunction
+) {
+    try {
+        const user = req.appUser;
+
+        if (!user) {
+            res.status(403).json({
+                message: "Application authorization required.",
+            });
+            return;
+        }
+
+        // Platform Admin has global verification access.
+        if (user.role === "PLATFORM_ADMIN") {
+            next();
+            return;
+        }
+
+        // College-scoped roles require an active college.
+        if (
+            user.role !== "COLLEGE_ADMIN" &&
+            user.role !== "COMMITTEE_MEMBER"
+        ) {
+            res.status(403).json({
+                message: "You do not have permission to review student verifications.",
+            });
+            return;
+        }
+
+        if (!user.collegeId) {
+            res.status(403).json({
+                message: "Your account is not associated with a college.",
+            });
+            return;
+        }
+
+        const college = await prisma.college.findUnique({
+            where: { id: user.collegeId },
+            select: { status: true },
+        });
+
+        if (!college || college.status !== "ACTIVE") {
+            res.status(403).json({
+                message: "Your college is not active.",
+            });
+            return;
+        }
+
+        // College Admin automatically has access to their college.
+        if (user.role === "COLLEGE_ADMIN") {
+            next();
+            return;
+        }
+
+        // Committee Members need an active delegated permission.
+        const permission =
+            await prisma.committeeVerificationPermission.findFirst({
+                where: {
+                    userId: user.id,
+                    collegeId: user.collegeId,
+                    revokedAt: null,
+                },
+                select: {
+                    id: true,
+                },
+            });
+
+        if (!permission) {
+            res.status(403).json({
+                message: "You do not have permission to review student verifications.",
+            });
+            return;
+        }
+
+        next();
+    } catch (error) {
+        next(error);
+    }
+}

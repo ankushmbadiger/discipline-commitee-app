@@ -15,7 +15,6 @@ import Users from "./pages/dashboard/Users";
 import Reports from "./pages/dashboard/Reports";
 import AuditLogs from "./pages/dashboard/AuditLogs";
 import StudentVerifications from "./pages/dashboard/StudentVerifications";
-
 function ProtectedRoute() {
   const { firebaseUser, appUser, loading } = useAuth();
 
@@ -35,6 +34,10 @@ function ProtectedRoute() {
   }
 
   if (!firebaseUser || !appUser) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (appUser.role !== "PLATFORM_ADMIN") {
     return <Navigate to="/login" replace />;
   }
 

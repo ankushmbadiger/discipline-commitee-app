@@ -13,6 +13,22 @@ export default function TabLayout() {
   const canCreateReport = !loading && !profileLoading &&
     role === 'COMMITTEE_MEMBER';
 
+  const canReviewVerifications =
+    !loading &&
+    !profileLoading &&
+    (
+      role === 'COLLEGE_ADMIN' ||
+      (
+        role === 'COMMITTEE_MEMBER' &&
+        Boolean(profile?.permissions?.canReviewStudentVerifications)
+      )
+    );
+
+  const canManageCommitteeMembers =
+    !loading &&
+    !profileLoading &&
+    role === 'COLLEGE_ADMIN' &&
+    Boolean(profile?.permissions?.canManageCommitteeMembers);
   const canViewCases =
     !loading &&
     !profileLoading &&
@@ -95,7 +111,47 @@ export default function TabLayout() {
         }}
       />
 
-
+      <Tabs.Screen
+        name="verifications"
+        options={{
+          title: 'Verifications',
+          href: canReviewVerifications ? undefined : null,
+          tabBarIcon: ({ color, size, focused }) => (
+            <View
+              style={{
+                width: 64,
+                height: 32,
+                borderRadius: 20,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: focused
+                  ? theme.colors.secondaryContainer
+                  : 'transparent',
+              }}
+            >
+              <MaterialCommunityIcons
+                name={focused ? 'clipboard-check' : 'clipboard-check-outline'}
+                size={size}
+                color={iconColor(color)}
+              />
+            </View>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="committee-members"
+        options={{
+          title: 'Committee',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons
+              name="account-group-outline"
+              color={typeof color === 'string' ? color : '#000000'}
+              size={size}
+            />
+          ),
+          href: canManageCommitteeMembers ? undefined : null,
+        }}
+      />
       <Tabs.Screen
         name="my-cases"
         options={{

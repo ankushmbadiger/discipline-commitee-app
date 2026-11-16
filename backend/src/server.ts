@@ -1,12 +1,14 @@
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";``
+import dotenv from "dotenv";
 import prisma from "./lib/prisma.js";
 import authRoutes from "./routes/auth.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 import reportsRoutes from "./routes/reports.routes.js";
 import evidenceRoutes from "./routes/evidence.routes.js";
 import studentsRoutes from "./routes/students.routes.js";
+import verificationRoutes from "./routes/verification.routes.js";
+import collegeAdminRoutes from "./routes/college-admin.routes.js";
 dotenv.config();
 
 const app = express();
@@ -18,6 +20,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/evidence", evidenceRoutes);
 app.use("/api/students", studentsRoutes);
+app.use("/api/verifications", verificationRoutes);
+app.use("/api/college-admin", collegeAdminRoutes);
 
 const PORT = process.env.PORT || 5000;
 

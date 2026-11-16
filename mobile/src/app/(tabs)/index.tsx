@@ -21,7 +21,6 @@ import {
   ActivityIndicator,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import api from '../../lib/api';
 import { useAuth } from '../../context/auth-context';
 type Evidence = {
@@ -48,7 +47,6 @@ type Report = {
 };
 
 export default function HomeScreen() {
-  const router = useRouter();
   const theme = useTheme();
   const { profile } = useAuth();
   const [reports, setReports] = useState<Report[]>([]);
@@ -57,11 +55,11 @@ export default function HomeScreen() {
   const [error, setError] = useState('');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
-//     console.log('Delete visibility debug:', {
-//     profileId: profile?.id,
-//     role: profile?.role,
-//     firstReportCreatorId: reports[0]?.createdById,
-// });
+  //     console.log('Delete visibility debug:', {
+  //     profileId: profile?.id,
+  //     role: profile?.role,
+  //     firstReportCreatorId: reports[0]?.createdById,
+  // });
 
   const fetchReports = useCallback(async () => {
     try {
@@ -208,13 +206,13 @@ export default function HomeScreen() {
           </Text>
         </View>
 
-        <IconButton
+        {/* <IconButton
           icon="bell-outline"
           size={25}
           onPress={() => { }}
           mode="outlined"
           accessibilityLabel="Notifications"
-        />
+        /> */}
       </View>
 
       <Divider />
@@ -285,7 +283,7 @@ export default function HomeScreen() {
                 { backgroundColor: theme.colors.surface },
               ]}
             >
-              <Card.Content>
+              <Card.Content style={styles.cardContent}>
                 <View style={styles.teacherRow}>
                   <Avatar.Text
                     size={44}
@@ -376,6 +374,7 @@ export default function HomeScreen() {
                     horizontal
                     showsHorizontalScrollIndicator={false}
                     style={styles.evidenceList}
+                    // contentContainerStyle={styles.evidenceContent}
                   >
                     {report.evidence.map((item) => (
                       <Pressable
@@ -437,31 +436,6 @@ export default function HomeScreen() {
                   </Text>
                 </View>
 
-                <Divider style={{ marginVertical: 12 }} />
-
-                <Pressable
-                  onPress={() =>
-                    router.push({
-                      pathname: '/report/[id]',
-                      params: { id: report.id },
-                    })
-                  }
-                  style={styles.actionRow}
-                >
-                  <Text
-                    variant="labelLarge"
-                    style={{ color: theme.colors.primary }}
-                  >
-                    View report details
-                  </Text>
-
-                  <IconButton
-                    icon="arrow-right"
-                    size={19}
-                    iconColor={theme.colors.primary}
-                    style={{ margin: 0 }}
-                  />
-                </Pressable>
               </Card.Content>
             </Card>
           ))
@@ -567,8 +541,8 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   evidenceImage: {
-    width: 260,
-    height: 200,
+    width: 280,
+    height: 180,
     borderRadius: 12,
     marginRight: 10,
     backgroundColor: '#dddddd',
@@ -617,4 +591,12 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '85%',
   },
+  evidenceContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  cardContent: {
+  paddingHorizontal: 14,
+  paddingVertical: 12,
+},
 });

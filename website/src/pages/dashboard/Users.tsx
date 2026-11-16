@@ -77,6 +77,9 @@ export default function Users() {
 
     // Committee member creation state
     const [createOpen, setCreateOpen] = useState(false);
+    const [createRole, setCreateRole] = useState<
+        "COMMITTEE_MEMBER" | "COLLEGE_ADMIN"
+    >("COMMITTEE_MEMBER");
     const [creating, setCreating] = useState(false);
     const [newFullName, setNewFullName] = useState("");
     const [newEmail, setNewEmail] = useState("");
@@ -173,6 +176,7 @@ export default function Users() {
     };
 
     const openCreateDialog = () => {
+        setCreateRole("COMMITTEE_MEMBER");
         setNewFullName("");
         setNewEmail("");
         setNewPassword("");
@@ -182,7 +186,7 @@ export default function Users() {
         setCreateOpen(true);
     };
 
-    const handleCreateCommitteeMember = async () => {
+    const handleCreateAccount = async () => {
         if (
             !newFullName.trim() ||
             !newEmail.trim() ||
@@ -198,7 +202,12 @@ export default function Users() {
             setError("");
             setSuccess("");
 
-            const response = await api.post("/admin/committee-members", {
+            const endpoint =
+                createRole === "COLLEGE_ADMIN"
+                    ? "/admin/college-admins"
+                    : "/admin/committee-members";
+
+            const response = await api.post(endpoint, {
                 fullName: newFullName.trim(),
                 email: newEmail.trim(),
                 password: newPassword,
@@ -213,7 +222,9 @@ export default function Users() {
 
             setSuccess(
                 response.data.message ||
-                "Committee member created successfully."
+                (createRole === "COLLEGE_ADMIN"
+                    ? "College Admin created successfully."
+                    : "Committee Member created successfully.")
             );
 
             await fetchUsers();
@@ -254,7 +265,7 @@ export default function Users() {
                     variant="contained"
                     onClick={openCreateDialog}
                 >
-                    Create Committee Member
+                    Create Account
                 </Button>
             </Stack>
 
@@ -471,15 +482,41 @@ export default function Users() {
                 fullWidth
                 maxWidth="sm"
             >
-                <DialogTitle>Create Committee Member</DialogTitle>
+                <DialogTitle>
+                    {createRole === "COLLEGE_ADMIN"
+                        ? "Create College Admin"
+                        : "Create Committee Member"}
+                </DialogTitle>
 
                 <DialogContent>
                     <DialogContentText sx={{ mb: 2 }}>
-                        Create a teacher account for your college's
-                        discipline committee.
+                        {createRole === "COLLEGE_ADMIN"
+                            ? "Create an administrator account to manage users and student verifications for the selected college."
+                            : "Create a teacher account for your college's discipline committee."}
                     </DialogContentText>
 
                     <Stack spacing={2} sx={{ mt: 1 }}>
+                        <FormControl fullWidth required>
+                            <InputLabel>Account role</InputLabel>
+                            <Select
+                                value={createRole}
+                                label="Account role"
+                                onChange={(e) =>
+                                    setCreateRole(
+                                        e.target.value as
+                                        | "COMMITTEE_MEMBER"
+                                        | "COLLEGE_ADMIN"
+                                    )
+                                }
+                            >
+                                <MenuItem value="COMMITTEE_MEMBER">
+                                    Committee Member
+                                </MenuItem>
+                                <MenuItem value="COLLEGE_ADMIN">
+                                    College Admin
+                                </MenuItem>
+                            </Select>
+                        </FormControl>
                         <TextField
                             label="Full name"
                             value={newFullName}
@@ -489,6 +526,7 @@ export default function Users() {
                             fullWidth
                             required
                         />
+
 
                         <TextField
                             label="Email address"
@@ -543,7 +581,7 @@ export default function Users() {
 
                     <Button
                         variant="contained"
-                        onClick={handleCreateCommitteeMember}
+                        onClick={handleCreateAccount}
                         disabled={
                             creating ||
                             !newFullName.trim() ||
@@ -552,7 +590,11 @@ export default function Users() {
                             !newCollegeCode
                         }
                     >
-                        {creating ? "Creating..." : "Create account"}
+                        {creating
+                            ? "Creating..."
+                            : createRole === "COLLEGE_ADMIN"
+                                ? "Create College Admin"
+                                : "Create Committee Member"}
                     </Button>
                 </DialogActions>
             </Dialog>
