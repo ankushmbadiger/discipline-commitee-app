@@ -26,6 +26,7 @@ import {
     LightModeOutlined,
     DarkModeOutlined,
     LogoutOutlined,
+    FactCheckOutlined,
 } from "@mui/icons-material";
 
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -38,6 +39,7 @@ const navigation = [
     { label: "Overview", path: "/", icon: <DashboardOutlined /> },
     { label: "Colleges", path: "/colleges", icon: <AccountBalanceOutlined /> },
     { label: "Students", path: "/students", icon: <GroupsOutlined /> },
+    { label: "Student Verifications", path: "/student-verifications", icon: <FactCheckOutlined /> },
     { label: "Users", path: "/users", icon: <ManageAccountsOutlined /> },
     { label: "Reports", path: "/reports", icon: <ArticleOutlined /> },
     { label: "Audit Logs", path: "/audit-logs", icon: <HistoryOutlined /> },

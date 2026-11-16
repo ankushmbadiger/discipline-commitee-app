@@ -57,6 +57,11 @@ export default function HomeScreen() {
   const [error, setError] = useState('');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
+//     console.log('Delete visibility debug:', {
+//     profileId: profile?.id,
+//     role: profile?.role,
+//     firstReportCreatorId: reports[0]?.createdById,
+// });
 
   const fetchReports = useCallback(async () => {
     try {

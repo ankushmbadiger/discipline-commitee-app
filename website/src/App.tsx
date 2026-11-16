@@ -14,6 +14,7 @@ import Colleges from "./pages/dashboard/Colleges";
 import Users from "./pages/dashboard/Users";
 import Reports from "./pages/dashboard/Reports";
 import AuditLogs from "./pages/dashboard/AuditLogs";
+import StudentVerifications from "./pages/dashboard/StudentVerifications";
 
 function ProtectedRoute() {
   const { firebaseUser, appUser, loading } = useAuth();
@@ -66,6 +67,10 @@ export default function App() {
             <Route path="/" element={<Overview />} />
             <Route path="/colleges" element={<Colleges />} />
             <Route path="/students" element={<Students />} />
+            <Route
+              path="/student-verifications"
+              element={<StudentVerifications />}
+            />
             <Route path="/users" element={<Users />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/audit-logs" element={<AuditLogs />} />

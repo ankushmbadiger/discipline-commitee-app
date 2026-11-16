@@ -12,6 +12,85 @@ const router = Router();
 // Every route in this file requires an active platform administrator.
 router.use(authenticate, requireActiveUser, requireRole("PLATFORM_ADMIN"));
 
+router.patch("/colleges/:id/status", async (req, res) => {
+    const { id } = req.params;
+    const status = req.body?.status;
+
+    if (status !== "ACTIVE" && status !== "INACTIVE") {
+        res.status(400).json({
+            message: "Status must be ACTIVE or INACTIVE.",
+        });
+        return;
+    }
+
+    try {
+        const college = await prisma.$transaction(async (tx) => {
+            const existingCollege = await tx.college.findUnique({
+                where: { id },
+                select: {
+                    id: true,
+                    name: true,
+                    status: true,
+                },
+            });
+
+            if (!existingCollege) {
+                return null;
+            }
+
+            const updatedCollege = await tx.college.update({
+                where: { id },
+                data: { status },
+                select: {
+                    id: true,
+                    name: true,
+                    code: true,
+                    status: true,
+                    _count: {
+                        select: {
+                            students: true,
+                        },
+                    },
+                },
+            });
+
+            await tx.auditLog.create({
+                data: {
+                    userId: req.appUser!.id,
+                    collegeId: id,
+                    action:
+                        status === "ACTIVE"
+                            ? "COLLEGE_ACTIVATED"
+                            : "COLLEGE_DEACTIVATED",
+                    entityType: "College",
+                    entityId: id,
+                    details: {
+                        previousStatus: existingCollege.status,
+                        newStatus: status,
+                    },
+                },
+            });
+
+            return updatedCollege;
+        });
+
+        if (!college) {
+            res.status(404).json({
+                message: "College not found.",
+            });
+            return;
+        }
+
+        res.status(200).json({
+            message: `College ${status.toLowerCase()} successfully.`,
+            college,
+        });
+    } catch (error) {
+        throw error;
+    }
+});
+
+
 // GET /api/admin/users
 // List platform users with optional filters.
 router.get("/users", async (req, res, next) => {
@@ -646,83 +725,6 @@ router.post("/student-verifications/:id/approve", async (req, res) => {
 
     // PATCH /api/admin/colleges/:id/status
     // Activate or deactivate a college.
-    router.patch("/colleges/:id/status", async (req, res) => {
-        const { id } = req.params;
-        const status = req.body?.status;
-
-        if (status !== "ACTIVE" && status !== "INACTIVE") {
-            res.status(400).json({
-                message: "Status must be ACTIVE or INACTIVE.",
-            });
-            return;
-        }
-
-        try {
-            const college = await prisma.$transaction(async (tx) => {
-                const existingCollege = await tx.college.findUnique({
-                    where: { id },
-                    select: {
-                        id: true,
-                        name: true,
-                        status: true,
-                    },
-                });
-
-                if (!existingCollege) {
-                    return null;
-                }
-
-                const updatedCollege = await tx.college.update({
-                    where: { id },
-                    data: { status },
-                    select: {
-                        id: true,
-                        name: true,
-                        code: true,
-                        status: true,
-                        _count: {
-                            select: {
-                                students: true,
-                            },
-                        },
-                    },
-                });
-
-                await tx.auditLog.create({
-                    data: {
-                        userId: req.appUser!.id,
-                        collegeId: id,
-                        action:
-                            status === "ACTIVE"
-                                ? "COLLEGE_ACTIVATED"
-                                : "COLLEGE_DEACTIVATED",
-                        entityType: "College",
-                        entityId: id,
-                        details: {
-                            previousStatus: existingCollege.status,
-                            newStatus: status,
-                        },
-                    },
-                });
-
-                return updatedCollege;
-            });
-
-            if (!college) {
-                res.status(404).json({
-                    message: "College not found.",
-                });
-                return;
-            }
-
-            res.status(200).json({
-                message: `College ${status.toLowerCase()} successfully.`,
-                college,
-            });
-        } catch (error) {
-            throw error;
-        }
-    });
 
 
 
