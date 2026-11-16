@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+
+import { useEffect, useState } from "react";
 import axios from "axios";
 
 import {
@@ -31,9 +32,9 @@ import {
 
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
-import api from "../../lib/api";
 import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
+import api from "../../lib/api";
 
 interface College {
     id: string;
@@ -66,6 +67,7 @@ export default function Students() {
     const [collegeId, setCollegeId] = useState("");
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+    const [refreshKey, setRefreshKey] = useState(0);
 
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editingStudent, setEditingStudent] = useState<Student | null>(null);
@@ -74,56 +76,95 @@ export default function Students() {
     const [formError, setFormError] = useState("");
     const [success, setSuccess] = useState("");
 
-    const fetchColleges = useCallback(async () => {
-        try {
-            const response = await api.get("/admin/colleges");
-            setColleges(response.data.colleges);
-        } catch {
-            setError("Unable to load colleges.");
-        }
+    // Load colleges once.
+    useEffect(() => {
+        let cancelled = false;
+
+        const loadColleges = async () => {
+            try {
+                const response = await api.get("/admin/colleges");
+
+                if (cancelled) return;
+
+                setColleges(response.data.colleges ?? []);
+            } catch {
+                if (cancelled) return;
+                setError("Unable to load colleges.");
+            }
+        };
+
+        void loadColleges();
+
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
-    const fetchStudents = useCallback(async () => {
-        setLoading(true);
-        setError("");
-
-        try {
-            const params: Record<string, string> = {};
-
-            if (search.trim()) {
-                params.search = search.trim();
-            }
-
-            if (collegeId) {
-                params.collegeId = collegeId;
-            }
-
-            const response = await api.get("/students", { params });
-            setStudents(response.data.students);
-        } catch {
-            setError("Unable to load students. Please try again.");
-        } finally {
-            setLoading(false);
-        }
-    }, [search, collegeId]);
-
+    // Load students whenever search, college filter, or refresh key changes.
     useEffect(() => {
-        fetchColleges();
-    }, [fetchColleges]);
+        let cancelled = false;
 
-    useEffect(() => {
         const timeout = setTimeout(() => {
-            fetchStudents();
+            const loadStudents = async () => {
+                try {
+                    const params: Record<string, string> = {};
+
+                    if (search.trim()) {
+                        params.search = search.trim();
+                    }
+
+                    if (collegeId) {
+                        params.collegeId = collegeId;
+                    }
+
+                    const response = await api.get("/students", { params });
+
+                    if (cancelled) return;
+
+                    setStudents(response.data.students ?? []);
+                    setError("");
+                } catch {
+                    if (cancelled) return;
+                    setError("Unable to load students. Please try again.");
+                } finally {
+                    if (!cancelled) {
+                        setLoading(false);
+                    }
+                }
+            };
+
+            void loadStudents();
         }, 300);
 
-        return () => clearTimeout(timeout);
-    }, [fetchStudents]);
+        return () => {
+            cancelled = true;
+            clearTimeout(timeout);
+        };
+    }, [search, collegeId, refreshKey]);
+
+    const refreshStudents = () => {
+        setLoading(true);
+        setError("");
+        setRefreshKey((current) => current + 1);
+    };
+
+    const handleSearchChange = (value: string) => {
+        setSearch(value);
+        setLoading(true);
+        setError("");
+    };
+
+    const handleCollegeFilterChange = (value: string) => {
+        setCollegeId(value);
+        setLoading(true);
+        setError("");
+    };
 
     const openAddDialog = () => {
         setEditingStudent(null);
         setForm({
             ...initialForm,
-            collegeId: collegeId,
+            collegeId,
         });
         setFormError("");
         setDialogOpen(true);
@@ -160,11 +201,12 @@ export default function Students() {
                     : "Student reactivated successfully."
             );
 
-            await fetchStudents();
+            refreshStudents();
         } catch (err: unknown) {
             if (axios.isAxiosError(err)) {
                 setError(
-                    err.response?.data?.message || "Unable to update student status."
+                    err.response?.data?.message ||
+                    "Unable to update student status."
                 );
             } else {
                 setError("An unexpected error occurred.");
@@ -177,7 +219,9 @@ export default function Students() {
         setDialogOpen(false);
     };
 
-    const handleAddStudent = async (event: import("react").SyntheticEvent<HTMLFormElement>) => {
+    const handleAddStudent = async (
+        event: import("react").SyntheticEvent<HTMLFormElement>
+    ) => {
         event.preventDefault();
         setFormError("");
         setSuccess("");
@@ -198,7 +242,10 @@ export default function Students() {
 
         try {
             if (editingStudent) {
-                await api.patch(`/students/${editingStudent.id}`, studentData);
+                await api.patch(
+                    `/students/${editingStudent.id}`,
+                    studentData
+                );
                 setSuccess("Student updated successfully.");
             } else {
                 await api.post("/students", {
@@ -211,7 +258,7 @@ export default function Students() {
             setDialogOpen(false);
             setEditingStudent(null);
             setForm(initialForm);
-            await fetchStudents();
+            refreshStudents();
         } catch (err: unknown) {
             if (axios.isAxiosError(err)) {
                 setFormError(
@@ -224,6 +271,7 @@ export default function Students() {
             setSaving(false);
         }
     };
+
     return (
         <Box>
             <Typography variant="h4" gutterBottom>
@@ -249,7 +297,9 @@ export default function Students() {
                             label="Search students"
                             placeholder="Search by USN, name or department"
                             value={search}
-                            onChange={(event) => setSearch(event.target.value)}
+                            onChange={(event) =>
+                                handleSearchChange(event.target.value)
+                            }
                             sx={{ flex: 1, minWidth: 220 }}
                         />
 
@@ -260,12 +310,17 @@ export default function Students() {
                                 <Select
                                     value={collegeId}
                                     label="College"
-                                    onChange={(event) => setCollegeId(event.target.value)}
+                                    onChange={(event) =>
+                                        handleCollegeFilterChange(event.target.value)
+                                    }
                                 >
                                     <MenuItem value="">All colleges</MenuItem>
 
                                     {colleges.map((college) => (
-                                        <MenuItem key={college.id} value={college.id}>
+                                        <MenuItem
+                                            key={college.id}
+                                            value={college.id}
+                                        >
                                             {college.name}
                                         </MenuItem>
                                     ))}
@@ -299,7 +354,13 @@ export default function Students() {
                     )}
 
                     {loading ? (
-                        <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
+                        <Box
+                            sx={{
+                                display: "flex",
+                                justifyContent: "center",
+                                py: 6,
+                            }}
+                        >
                             <CircularProgress />
                         </Box>
                     ) : (
@@ -330,7 +391,9 @@ export default function Students() {
                                                 <TableCell>{student.usn}</TableCell>
                                                 <TableCell>{student.fullName}</TableCell>
                                                 <TableCell>{student.department}</TableCell>
-                                                <TableCell>{student.semester ?? "—"}</TableCell>
+                                                <TableCell>
+                                                    {student.semester ?? "—"}
+                                                </TableCell>
                                                 <TableCell>
                                                     <Chip
                                                         size="small"
@@ -345,12 +408,16 @@ export default function Students() {
                                                         variant="outlined"
                                                     />
                                                 </TableCell>
-                                                <TableCell>{student.college.name}</TableCell>
+                                                <TableCell>
+                                                    {student.college.name}
+                                                </TableCell>
                                                 <TableCell align="right">
                                                     <Tooltip title="Edit student">
                                                         <IconButton
                                                             color="primary"
-                                                            onClick={() => openEditDialog(student)}
+                                                            onClick={() =>
+                                                                openEditDialog(student)
+                                                            }
                                                             aria-label="Edit student"
                                                         >
                                                             <EditOutlined />
@@ -366,8 +433,14 @@ export default function Students() {
                                                             }
                                                         >
                                                             <IconButton
-                                                                color={student.status === "ACTIVE" ? "warning" : "success"}
-                                                                onClick={() => handleStatusChange(student)}
+                                                                color={
+                                                                    student.status === "ACTIVE"
+                                                                        ? "warning"
+                                                                        : "success"
+                                                                }
+                                                                onClick={() =>
+                                                                    handleStatusChange(student)
+                                                                }
                                                                 aria-label={
                                                                     student.status === "ACTIVE"
                                                                         ? "Deactivate student"
@@ -428,11 +501,17 @@ export default function Students() {
                                 value={form.collegeId}
                                 label="College"
                                 onChange={(event) =>
-                                    setForm({ ...form, collegeId: event.target.value })
+                                    setForm({
+                                        ...form,
+                                        collegeId: event.target.value,
+                                    })
                                 }
                             >
                                 {colleges.map((college) => (
-                                    <MenuItem key={college.id} value={college.id}>
+                                    <MenuItem
+                                        key={college.id}
+                                        value={college.id}
+                                    >
                                         {college.name} ({college.code})
                                     </MenuItem>
                                 ))}
@@ -468,7 +547,10 @@ export default function Students() {
                             margin="normal"
                             value={form.department}
                             onChange={(event) =>
-                                setForm({ ...form, department: event.target.value })
+                                setForm({
+                                    ...form,
+                                    department: event.target.value,
+                                })
                             }
                         />
 
@@ -479,7 +561,10 @@ export default function Students() {
                             margin="normal"
                             value={form.semester}
                             onChange={(event) =>
-                                setForm({ ...form, semester: event.target.value })
+                                setForm({
+                                    ...form,
+                                    semester: event.target.value,
+                                })
                             }
                             slotProps={{
                                 htmlInput: { min: 1, step: 1 },

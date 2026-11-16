@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import axios from "axios";
 
 import {
@@ -54,6 +54,7 @@ export default function Colleges() {
     const [search, setSearch] = useState("");
 
     const [loading, setLoading] = useState(true);
+    const [refreshKey, setRefreshKey] = useState(0);
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
 
@@ -64,29 +65,40 @@ export default function Colleges() {
     const [saving, setSaving] = useState(false);
     const [formError, setFormError] = useState("");
 
-    const fetchColleges = useCallback(async () => {
-        setLoading(true);
-        setError("");
-
-        try {
-            const response = await api.get("/admin/colleges");
-            setColleges(response.data.colleges);
-        } catch (err: unknown) {
-            if (axios.isAxiosError(err)) {
-                setError(
-                    err.response?.data?.message || "Unable to load colleges."
-                );
-            } else {
-                setError("An unexpected error occurred.");
-            }
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
     useEffect(() => {
-        fetchColleges();
-    }, [fetchColleges]);
+        let cancelled = false;
+
+        const loadColleges = async () => {
+            try {
+                const response = await api.get("/admin/colleges");
+
+                if (cancelled) return;
+
+                setColleges(response.data.colleges);
+                setError("");
+            } catch (err: unknown) {
+                if (cancelled) return;
+
+                if (axios.isAxiosError(err)) {
+                    setError(
+                        err.response?.data?.message || "Unable to load colleges."
+                    );
+                } else {
+                    setError("An unexpected error occurred.");
+                }
+            } finally {
+                if (!cancelled) {
+                    setLoading(false);
+                }
+            }
+        };
+
+        void loadColleges();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [refreshKey]);
 
     const filteredColleges = colleges.filter((college) => {
         const query = search.trim().toLowerCase();
@@ -125,6 +137,7 @@ export default function Colleges() {
         event.preventDefault();
 
         setFormError("");
+        setError("");
         setSuccess("");
 
         const name = form.name.trim();
@@ -158,7 +171,8 @@ export default function Colleges() {
             setEditingCollege(null);
             setForm(initialForm);
 
-            await fetchColleges();
+            setLoading(true);
+            setRefreshKey((current) => current + 1);
         } catch (err: unknown) {
             if (axios.isAxiosError(err)) {
                 setFormError(
@@ -190,7 +204,8 @@ export default function Colleges() {
                     : "College reactivated successfully."
             );
 
-            await fetchColleges();
+            setLoading(true);
+            setRefreshKey((current) => current + 1);
         } catch (err: unknown) {
             if (axios.isAxiosError(err)) {
                 setError(

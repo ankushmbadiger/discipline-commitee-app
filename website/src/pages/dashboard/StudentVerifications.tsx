@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import axios from "axios";
 
 import {
@@ -60,6 +60,7 @@ const initialApprovalForm = {
 export default function StudentVerifications() {
     const [verifications, setVerifications] = useState<Verification[]>([]);
     const [loading, setLoading] = useState(true);
+    const [refreshKey, setRefreshKey] = useState(0);
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
 
@@ -73,30 +74,47 @@ export default function StudentVerifications() {
     const [saving, setSaving] = useState(false);
     const [formError, setFormError] = useState("");
 
-    const fetchVerifications = useCallback(async () => {
+    useEffect(() => {
+        let cancelled = false;
+
+        const loadVerifications = async () => {
+            try {
+                const response = await api.get("/admin/student-verifications");
+
+                if (cancelled) return;
+
+                setVerifications(response.data.verifications ?? []);
+                setError("");
+            } catch (err: unknown) {
+                if (cancelled) return;
+
+                if (axios.isAxiosError(err)) {
+                    setError(
+                        err.response?.data?.message ||
+                        "Unable to load student verification requests."
+                    );
+                } else {
+                    setError("An unexpected error occurred.");
+                }
+            } finally {
+                if (!cancelled) {
+                    setLoading(false);
+                }
+            }
+        };
+
+        void loadVerifications();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [refreshKey]);
+
+    const refreshVerifications = () => {
         setLoading(true);
         setError("");
-
-        try {
-            const response = await api.get("/admin/student-verifications");
-            setVerifications(response.data.verifications ?? []);
-        } catch (err: unknown) {
-            if (axios.isAxiosError(err)) {
-                setError(
-                    err.response?.data?.message ||
-                    "Unable to load student verification requests."
-                );
-            } else {
-                setError("An unexpected error occurred.");
-            }
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    useEffect(() => {
-        fetchVerifications();
-    }, [fetchVerifications]);
+        setRefreshKey((current) => current + 1);
+    };
 
     const openApproval = (verification: Verification) => {
         setSelected(verification);
@@ -154,7 +172,7 @@ export default function StudentVerifications() {
                 `${selected.requestedFullName} has been verified successfully.`
             );
 
-            await fetchVerifications();
+            refreshVerifications();
         } catch (err: unknown) {
             if (axios.isAxiosError(err)) {
                 setFormError(
@@ -194,7 +212,7 @@ export default function StudentVerifications() {
                 `${selected.requestedFullName}'s verification request was rejected.`
             );
 
-            await fetchVerifications();
+            refreshVerifications();
         } catch (err: unknown) {
             if (axios.isAxiosError(err)) {
                 setFormError(
@@ -218,7 +236,8 @@ export default function StudentVerifications() {
                     alignItems: "center",
                     justifyContent: "space-between",
                 }}
-            >                <Box>
+            >
+                <Box>
                     <Typography variant="h5" sx={{ fontWeight: 700 }}>
                         Student Verifications
                     </Typography>
@@ -230,7 +249,7 @@ export default function StudentVerifications() {
                 <Tooltip title="Refresh requests">
                     <span>
                         <IconButton
-                            onClick={fetchVerifications}
+                            onClick={refreshVerifications}
                             disabled={loading}
                             color="primary"
                         >

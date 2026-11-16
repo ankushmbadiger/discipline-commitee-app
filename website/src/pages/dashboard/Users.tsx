@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import axios from "axios";
 import {
     Alert,
@@ -69,13 +69,14 @@ export default function Users() {
     const [role, setRole] = useState("");
     const [collegeId, setCollegeId] = useState("");
     const [accountStatus, setAccountStatus] = useState("");
+    const [refreshKey, setRefreshKey] = useState(0);
 
     const [selectedUser, setSelectedUser] = useState<AppUser | null>(null);
     const [newStatus, setNewStatus] = useState("");
     const [updating, setUpdating] = useState(false);
     const [success, setSuccess] = useState("");
 
-    // Committee member creation state
+    // Account creation state
     const [createOpen, setCreateOpen] = useState(false);
     const [createRole, setCreateRole] = useState<
         "COMMITTEE_MEMBER" | "COLLEGE_ADMIN"
@@ -86,54 +87,82 @@ export default function Users() {
     const [newPassword, setNewPassword] = useState("");
     const [newCollegeCode, setNewCollegeCode] = useState("");
 
-    const fetchUsers = useCallback(async () => {
-        try {
-            setLoading(true);
-            setError("");
+    // Load colleges once.
+    useEffect(() => {
+        let cancelled = false;
 
-            const response = await api.get("/admin/users", {
-                params: {
-                    search: search || undefined,
-                    role: role || undefined,
-                    collegeId: collegeId || undefined,
-                    accountStatus: accountStatus || undefined,
-                },
-            });
+        const loadColleges = async () => {
+            try {
+                const response = await api.get("/admin/colleges");
 
-            setUsers(response.data.users || []);
-        } catch (err) {
-            if (axios.isAxiosError(err)) {
-                setError(
-                    err.response?.data?.message || "Unable to load users."
-                );
-            } else {
-                setError("Unable to load users.");
+                if (cancelled) return;
+
+                setColleges(response.data.colleges || []);
+            } catch {
+                if (cancelled) return;
+                setError("Unable to load colleges.");
             }
-        } finally {
-            setLoading(false);
-        }
-    }, [search, role, collegeId, accountStatus]);
+        };
 
-    const fetchColleges = useCallback(async () => {
-        try {
-            const response = await api.get("/admin/colleges");
-            setColleges(response.data.colleges || []);
-        } catch {
-            setError("Unable to load colleges.");
-        }
+        void loadColleges();
+
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
+    // Load users when filters or refresh key change.
     useEffect(() => {
-        fetchColleges();
-    }, [fetchColleges]);
+        let cancelled = false;
 
-    useEffect(() => {
         const timeout = setTimeout(() => {
-            fetchUsers();
+            const loadUsers = async () => {
+                try {
+                    const response = await api.get("/admin/users", {
+                        params: {
+                            search: search || undefined,
+                            role: role || undefined,
+                            collegeId: collegeId || undefined,
+                            accountStatus: accountStatus || undefined,
+                        },
+                    });
+
+                    if (cancelled) return;
+
+                    setUsers(response.data.users || []);
+                    setError("");
+                } catch (err: unknown) {
+                    if (cancelled) return;
+
+                    if (axios.isAxiosError(err)) {
+                        setError(
+                            err.response?.data?.message ||
+                            "Unable to load users."
+                        );
+                    } else {
+                        setError("Unable to load users.");
+                    }
+                } finally {
+                    if (!cancelled) {
+                        setLoading(false);
+                    }
+                }
+            };
+
+            void loadUsers();
         }, 300);
 
-        return () => clearTimeout(timeout);
-    }, [fetchUsers]);
+        return () => {
+            cancelled = true;
+            clearTimeout(timeout);
+        };
+    }, [search, role, collegeId, accountStatus, refreshKey]);
+
+    const refreshUsers = () => {
+        setLoading(true);
+        setError("");
+        setRefreshKey((current) => current + 1);
+    };
 
     const handleStatusUpdate = async () => {
         if (!selectedUser || !newStatus) return;
@@ -153,8 +182,8 @@ export default function Users() {
 
             setSelectedUser(null);
             setNewStatus("");
-            await fetchUsers();
-        } catch (err) {
+            refreshUsers();
+        } catch (err: unknown) {
             if (axios.isAxiosError(err)) {
                 setError(
                     err.response?.data?.message ||
@@ -227,15 +256,15 @@ export default function Users() {
                     : "Committee Member created successfully.")
             );
 
-            await fetchUsers();
-        } catch (err) {
+            refreshUsers();
+        } catch (err: unknown) {
             if (axios.isAxiosError(err)) {
                 setError(
                     err.response?.data?.message ||
-                    "Unable to create committee member."
+                    "Unable to create account."
                 );
             } else {
-                setError("Unable to create committee member.");
+                setError("Unable to create account.");
             }
         } finally {
             setCreating(false);
@@ -252,7 +281,8 @@ export default function Users() {
                     alignItems: { xs: "stretch", sm: "center" },
                 }}
                 spacing={2}
-            >                <Box>
+            >
+                <Box>
                     <Typography variant="h4" gutterBottom>
                         Users
                     </Typography>
@@ -297,7 +327,11 @@ export default function Users() {
                     <TextField
                         label="Search name or email"
                         value={search}
-                        onChange={(e) => setSearch(e.target.value)}
+                        onChange={(e) => {
+                            setSearch(e.target.value);
+                            setLoading(true);
+                            setError("");
+                        }}
                         fullWidth
                         size="small"
                     />
@@ -307,7 +341,11 @@ export default function Users() {
                         <Select
                             value={role}
                             label="Role"
-                            onChange={(e) => setRole(e.target.value)}
+                            onChange={(e) => {
+                                setRole(e.target.value);
+                                setLoading(true);
+                                setError("");
+                            }}
                         >
                             <MenuItem value="">All roles</MenuItem>
                             {roles.map((item) => (
@@ -323,7 +361,11 @@ export default function Users() {
                         <Select
                             value={collegeId}
                             label="College"
-                            onChange={(e) => setCollegeId(e.target.value)}
+                            onChange={(e) => {
+                                setCollegeId(e.target.value);
+                                setLoading(true);
+                                setError("");
+                            }}
                         >
                             <MenuItem value="">All colleges</MenuItem>
                             {colleges.map((college) => (
@@ -339,7 +381,11 @@ export default function Users() {
                         <Select
                             value={accountStatus}
                             label="Status"
-                            onChange={(e) => setAccountStatus(e.target.value)}
+                            onChange={(e) => {
+                                setAccountStatus(e.target.value);
+                                setLoading(true);
+                                setError("");
+                            }}
                         >
                             <MenuItem value="">All statuses</MenuItem>
                             {statuses.map((item) => (
@@ -357,6 +403,8 @@ export default function Users() {
                             setRole("");
                             setCollegeId("");
                             setAccountStatus("");
+                            setLoading(true);
+                            setError("");
                         }}
                     >
                         Clear
@@ -473,7 +521,7 @@ export default function Users() {
                 </Table>
             </TableContainer>
 
-            {/* Create committee member dialog */}
+            {/* Create account dialog */}
             <Dialog
                 open={createOpen}
                 onClose={() => {
@@ -504,8 +552,8 @@ export default function Users() {
                                 onChange={(e) =>
                                     setCreateRole(
                                         e.target.value as
-                                        | "COMMITTEE_MEMBER"
-                                        | "COLLEGE_ADMIN"
+                                            | "COMMITTEE_MEMBER"
+                                            | "COLLEGE_ADMIN"
                                     )
                                 }
                             >
@@ -517,6 +565,7 @@ export default function Users() {
                                 </MenuItem>
                             </Select>
                         </FormControl>
+
                         <TextField
                             label="Full name"
                             value={newFullName}
@@ -526,7 +575,6 @@ export default function Users() {
                             fullWidth
                             required
                         />
-
 
                         <TextField
                             label="Email address"

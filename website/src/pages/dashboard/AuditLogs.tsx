@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import axios from "axios";
 import {
     Alert,
@@ -73,36 +73,46 @@ export default function AuditLogs() {
     const [entityType, setEntityType] = useState("");
     const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
 
-    const fetchLogs = useCallback(async () => {
-        try {
-            setLoading(true);
-            setError("");
-
-            const response = await api.get("/admin/audit-logs", {
-                params: {
-                    search: search.trim() || undefined,
-                    action: action || undefined,
-                    entityType: entityType || undefined,
-                    page: pagination.page,
-                },
-            });
-
-            setLogs(response.data.auditLogs ?? []);
-            setPagination(response.data.pagination);
-        } catch (err) {
-            setError(
-                axios.isAxiosError(err)
-                    ? err.response?.data?.message || "Failed to load audit logs."
-                    : "An unexpected error occurred."
-            );
-        } finally {
-            setLoading(false);
-        }
-    }, [search, action, entityType, pagination.page]);
-
     useEffect(() => {
-        fetchLogs();
-    }, [fetchLogs]);
+        let cancelled = false;
+
+        const loadLogs = async () => {
+            try {
+                const response = await api.get("/admin/audit-logs", {
+                    params: {
+                        search: search.trim() || undefined,
+                        action: action || undefined,
+                        entityType: entityType || undefined,
+                        page: pagination.page,
+                    },
+                });
+
+                if (cancelled) return;
+
+                setLogs(response.data.auditLogs ?? []);
+                setPagination(response.data.pagination);
+                setError("");
+            } catch (err) {
+                if (cancelled) return;
+
+                setError(
+                    axios.isAxiosError(err)
+                        ? err.response?.data?.message || "Failed to load audit logs."
+                        : "An unexpected error occurred."
+                );
+            } finally {
+                if (!cancelled) {
+                    setLoading(false);
+                }
+            }
+        };
+
+        void loadLogs();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [search, action, entityType, pagination.page]);
 
     const formatLabel = (value: string) =>
         value.replaceAll("_", " ").replace(/\b\w/g, (char) =>
@@ -155,6 +165,8 @@ export default function AuditLogs() {
                         placeholder="Search action, entity, user or email..."
                         value={search}
                         onChange={(event) => {
+                            setLoading(true);
+                            setError("");
                             setSearch(event.target.value);
                             setPagination((current) => ({
                                 ...current,
@@ -178,6 +190,8 @@ export default function AuditLogs() {
                         label="Action"
                         value={action}
                         onChange={(event) => {
+                            setLoading(true);
+                            setError("");
                             setAction(event.target.value);
                             setPagination((current) => ({
                                 ...current,
@@ -200,6 +214,8 @@ export default function AuditLogs() {
                         label="Entity type"
                         value={entityType}
                         onChange={(event) => {
+                            setLoading(true);
+                            setError("");
                             setEntityType(event.target.value);
                             setPagination((current) => ({
                                 ...current,
@@ -336,12 +352,14 @@ export default function AuditLogs() {
                             <Pagination
                                 count={Math.max(1, pagination.totalPages)}
                                 page={pagination.page}
-                                onChange={(_, page) =>
+                                onChange={(_, page) => {
+                                    setLoading(true);
+                                    setError("");
                                     setPagination((current) => ({
                                         ...current,
                                         page,
-                                    }))
-                                }
+                                    }));
+                                }}
                                 color="primary"
                                 size="small"
                             />

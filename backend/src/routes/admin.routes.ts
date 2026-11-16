@@ -12,6 +12,38 @@ const router = Router();
 // Every route in this file requires an active platform administrator.
 router.use(authenticate, requireActiveUser, requireRole("PLATFORM_ADMIN"));
 
+// GET /api/admin/overview
+// Return platform-wide dashboard statistics.
+router.get("/overview", async (_req, res, next) => {
+    try {
+        const [
+            totalColleges,
+            totalStudents,
+            totalReports,
+            totalAdministrators,
+        ] = await Promise.all([
+            prisma.college.count(),
+            prisma.student.count(),
+            prisma.report.count(),
+            prisma.user.count({
+                where: {
+                    role: "PLATFORM_ADMIN",
+                },
+            }),
+        ]);
+
+        res.status(200).json({
+            totalColleges,
+            totalStudents,
+            totalReports,
+            totalAdministrators,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+
 router.patch("/colleges/:id/status", async (req, res) => {
     const { id } = req.params;
     const status = req.body?.status;

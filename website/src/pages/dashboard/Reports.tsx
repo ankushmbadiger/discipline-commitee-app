@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import axios from "axios";
 import {
     Alert,
@@ -65,31 +65,43 @@ interface Report {
 export default function Reports() {
     const [reports, setReports] = useState<Report[]>([]);
     const [loading, setLoading] = useState(true);
+    const [refreshKey] = useState(0);
     const [error, setError] = useState("");
     const [search, setSearch] = useState("");
     const [selectedReport, setSelectedReport] = useState<Report | null>(null);
 
-    const fetchReports = useCallback(async () => {
-        try {
-            setLoading(true);
-            setError("");
-
-            const response = await api.get("/reports");
-            setReports(response.data.reports ?? []);
-        } catch (err) {
-            setError(
-                axios.isAxiosError(err)
-                    ? err.response?.data?.message || "Failed to load reports."
-                    : "An unexpected error occurred."
-            );
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
     useEffect(() => {
-        fetchReports();
-    }, [fetchReports]);
+        let cancelled = false;
+
+        const loadReports = async () => {
+            try {
+                const response = await api.get("/reports");
+
+                if (cancelled) return;
+
+                setReports(response.data.reports ?? []);
+                setError("");
+            } catch (err) {
+                if (cancelled) return;
+
+                setError(
+                    axios.isAxiosError(err)
+                        ? err.response?.data?.message || "Failed to load reports."
+                        : "An unexpected error occurred."
+                );
+            } finally {
+                if (!cancelled) {
+                    setLoading(false);
+                }
+            }
+        };
+
+        void loadReports();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [refreshKey]);
 
     const filteredReports = reports.filter((report) => {
         const query = search.toLowerCase();
