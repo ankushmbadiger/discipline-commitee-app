@@ -177,7 +177,7 @@ export default function Students() {
         setDialogOpen(false);
     };
 
-    const handleAddStudent = async (event: import("react").FormEvent<HTMLFormElement>) => {
+    const handleAddStudent = async (event: import("react").SyntheticEvent<HTMLFormElement>) => {
         event.preventDefault();
         setFormError("");
         setSuccess("");

@@ -1,7 +1,5 @@
 
 import {
-  createContext,
-  useContext,
   useEffect,
   useMemo,
   useState,
@@ -10,24 +8,14 @@ import {
 
 import { ThemeProvider, CssBaseline } from "@mui/material";
 import { getAppTheme } from "../theme";
-
-type ThemeMode = "light" | "dark";
-
-interface ThemeModeContextType {
-  mode: ThemeMode;
-  toggleMode: () => void;
-}
-
-const ThemeModeContext = createContext<ThemeModeContextType | undefined>(
-  undefined
-);
+import { ThemeModeContext } from "./ThemeModeContextValue";
 
 export function ThemeModeProvider({
   children,
 }: {
   children: ReactNode;
 }) {
-  const [mode, setMode] = useState<ThemeMode>(() => {
+  const [mode, setMode] = useState<"light" | "dark">(() => {
     return localStorage.getItem("dc-dashboard-theme") === "dark"
       ? "dark"
       : "light";
@@ -51,14 +39,4 @@ export function ThemeModeProvider({
       </ThemeProvider>
     </ThemeModeContext.Provider>
   );
-}
-
-export function useThemeMode() {
-  const context = useContext(ThemeModeContext);
-
-  if (!context) {
-    throw new Error("useThemeMode must be used inside ThemeModeProvider");
-  }
-
-  return context;
 }

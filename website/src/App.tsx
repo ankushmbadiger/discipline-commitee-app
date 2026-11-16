@@ -7,8 +7,7 @@ import DashboardLayout from "./components/layout/DashboardLayout";
 import Overview from "./pages/dashboard/Overview";
 import Login from "./pages/auth/Login";
 
-import { useAuth } from "./context/AuthContext";
-
+import { useAuth } from "./context/useAuth";
 import Students from "./pages/dashboard/Students";
 import Colleges from "./pages/dashboard/Colleges";
 import Users from "./pages/dashboard/Users";

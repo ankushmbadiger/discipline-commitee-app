@@ -1,7 +1,5 @@
 
 import {
-  createContext,
-  useContext,
   useEffect,
   useState,
   type ReactNode,
@@ -16,6 +14,7 @@ import {
 
 import { auth } from "../lib/firebase";
 import api from "../lib/api";
+import { AuthContext } from "./AuthContextValue";
 
 interface AppUser {
   id: string;
@@ -29,16 +28,6 @@ interface AppUser {
     code: string;
   } | null;
 }
-
-interface AuthContextType {
-  firebaseUser: User | null;
-  appUser: AppUser | null;
-  loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
@@ -90,14 +79,4 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       {children}
     </AuthContext.Provider>
   );
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext);
-
-  if (!context) {
-    throw new Error("useAuth must be used inside AuthProvider");
-  }
-
-  return context;
 }

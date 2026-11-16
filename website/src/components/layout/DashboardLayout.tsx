@@ -30,9 +30,9 @@ import {
 } from "@mui/icons-material";
 
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { useThemeMode } from "../../context/ThemeModeContext";
+import { useThemeMode } from "../../context/useThemeMode";
 import { useState } from "react";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth } from "../../context/useAuth";
 const drawerWidth = 250;
 
 const navigation = [

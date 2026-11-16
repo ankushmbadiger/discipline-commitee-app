@@ -120,7 +120,7 @@ export default function Colleges() {
     };
 
     const handleSaveCollege = async (
-        event: import("react").FormEvent<HTMLFormElement>
+        event: import("react").SyntheticEvent<HTMLFormElement>
     ) => {
         event.preventDefault();
 

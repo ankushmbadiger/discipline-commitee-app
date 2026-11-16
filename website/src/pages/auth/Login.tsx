@@ -1,5 +1,5 @@
 
-import { useState, type FormEvent } from "react";
+import { useState, type SyntheticEvent } from "react";
 import {
   Alert,
   Box,
@@ -11,8 +11,7 @@ import {
   CircularProgress,
 } from "@mui/material";
 
-import { useAuth } from "../../context/AuthContext";
-
+import { useAuth } from "../../context/useAuth";
 export default function Login() {
   const { login } = useAuth();
 
@@ -21,7 +20,7 @@ export default function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     setError("");
